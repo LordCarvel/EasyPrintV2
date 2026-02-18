@@ -1,0 +1,68 @@
+﻿.home-card {
+  background: var(--color-white);
+  padding: var(--spacing-lg);
+  border-radius: 8px;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.06);
+  width: 100%;
+  max-width: 450px;
+  box-sizing: border-box;
+}
+
+.home-card h2 {
+  text-align: center;
+  color: var(--color-blue);
+  margin-top: 0;
+  margin-bottom: var(--spacing-md);
+  font-size: 1.3rem;
+  font-weight: 600;
+  font-family: var(--font-inter);
+}
+
+.home-card textarea {
+  width: 100%;
+  height: 200px;
+  padding: var(--spacing-md);
+  font-size: 0.95rem;
+  border: 1px solid var(--color-light-gray-model-two);
+  border-radius: 6px;
+  resize: none;
+  margin-bottom: var(--spacing-md);
+  box-sizing: border-box;
+  font-family: var(--font-inter);
+  line-height: 1.5;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.home-card textarea:focus {
+  outline: none;
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 2px rgba(119, 162, 232, 0.1);
+}
+
+.home-card textarea::placeholder {
+  color: var(--color-light-gray-model-two);
+}
+
+.home-card button {
+  width: 100%;
+  padding: var(--spacing-md);
+  background: var(--color-blue);
+  color: var(--color-white);
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-inter);
+  transition: all 0.2s ease;
+}
+
+.home-card button:hover {
+  background: #6b92d8;
+  box-shadow: 0 4px 12px rgba(119, 162, 232, 0.25);
+}
+
+.home-card button:active {
+  transform: scale(0.98);
+}
+

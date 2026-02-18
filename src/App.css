@@ -1,0 +1,15 @@
+﻿.container {
+  position: fixed;
+  top: var(--header-height);
+  bottom: var(--footer-height);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  background: var(--color-dark-white);
+  padding: var(--spacing-lg);
+  box-sizing: border-box;
+  overflow-y: auto;
+}
