@@ -136,7 +136,7 @@ export function Home() {
       .trim();
 
   const parseCatalogEntries = (rawCatalogs) => {
-    if (!Array.isArray(rawCatalogs)) return [];
+    if (!Array.isArray(rawCatalogs)) return DEFAULT_CATALOG;
     const entries = [];
     rawCatalogs.forEach((catalog) => {
       const content = catalog?.content || '';
@@ -153,7 +153,18 @@ export function Home() {
           }
         });
     });
-    return entries.length ? entries : DEFAULT_CATALOG;
+    if (!entries.length) return DEFAULT_CATALOG;
+    const merged = new Map();
+    entries.forEach((entry) => {
+      merged.set(normalizeText(entry.name), entry);
+    });
+    DEFAULT_CATALOG.forEach((entry) => {
+      const key = normalizeText(entry.name);
+      if (!merged.has(key)) {
+        merged.set(key, entry);
+      }
+    });
+    return Array.from(merged.values());
   };
 
   const findCatalogEntry = (itemName) => {
@@ -225,21 +236,46 @@ export function Home() {
     return '';
   };
 
-  const shouldShowQty = (item) => {
+  const shouldShowQty = (item, items = [], index = -1, orderMeta = {}) => {
     const qty = item.qty || item.inferredQty;
     if (!qty) return false;
     const name = item.name || '';
     const normName = normalizeText(name);
     const isStandalonePizza = (normalized = '') =>
       normalized.includes('pizza') && !/(esfih|esfiha)/.test(normalized);
+    const isEsfiha = (normalized = '') => /(esfih|esfiha)/.test(normalized);
+    const isMainPizza = (normalized = '') =>
+      /(pizza\s*\d+\s*cm|fatia|fatias|borda|broto|media|m[eé]dia|grande|familia|fam[ií]lia)/.test(normalized);
+    const isFlavorLikeItem = (candidate) => {
+      if (!candidate) return false;
+      const candidateNorm = normalizeText(candidate.name || '');
+      const candidatePrice = toNumber(candidate.price || '');
+      if (!candidateNorm || candidatePrice <= 0) return false;
+      if (candidateNorm.includes('combo')) return false;
+      if (isMainPizza(candidateNorm)) return false;
+      return candidatePrice <= 12;
+    };
+    const isPizzaInEsfihaContext = () => {
+      if (!normName.includes('pizza')) return false;
+      const storeNorm = normalizeText(`${orderMeta.brand || ''} ${orderMeta.store || ''}`);
+      const marcaEhEsfiha = isEsfiha(storeNorm);
+      const vizinhoPareceEsfiha = [items[index - 1], items[index + 1]].some((it) => isFlavorLikeItem(it));
+      const pedidoPareceEsfiha = items.filter((it) => isFlavorLikeItem(it)).length >= 4;
+      const pizzaParecePrincipal = isMainPizza(normName);
+      if (marcaEhEsfiha) return true;
+      if (!pizzaParecePrincipal && vizinhoPareceEsfiha) return true;
+      if (!pizzaParecePrincipal && pedidoPareceEsfiha) return true;
+      return false;
+    };
     if (normName.includes('combo')) return true;
-    if (isStandalonePizza(normName)) return false;
+    if (isEsfiha(normName)) return true;
+    if (isStandalonePizza(normName)) return isPizzaInEsfihaContext();
 
     const entry = findCatalogEntry(name);
-    if (!entry) return false;
+    if (!entry) return isPizzaInEsfihaContext();
     const entryNorm = normalizeText(entry.name || '');
     if (entryNorm.includes('combo')) return true;
-    if (isStandalonePizza(entryNorm)) return false;
+    if (isStandalonePizza(entryNorm) && !isEsfiha(normName)) return isPizzaInEsfihaContext();
     return true;
   };
 
@@ -530,10 +566,10 @@ export function Home() {
       html += '<div style="font-weight:700; text-transform:uppercase; letter-spacing:0.3px;">Itens no pedido</div>';
       html += '<div style="font-size:11px; color:#111; font-weight:700;">Substituir itens</div>';
 
-      order.items.forEach((item) => {
+      order.items.forEach((item, index) => {
         html += `<div style="display:flex; justify-content:space-between; align-items:flex-start; column-gap:8px; margin-top:6px;">`;
         const qty = item.qty || item.inferredQty;
-        const label = shouldShowQty(item) ? `x${qty} ${item.name}` : item.name;
+        const label = shouldShowQty(item, order.items, index, order) ? `x${qty} ${item.name}` : item.name;
         html += `<span style="flex:1; word-break:break-word; font-weight:700;">${render(label)}</span>`;
         html += `<span style="white-space:nowrap; font-weight:700;">${render(currency(item.price || ''))}</span>`;
         html += `</div>`;
