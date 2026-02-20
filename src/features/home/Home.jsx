@@ -230,14 +230,16 @@ export function Home() {
     if (!qty) return false;
     const name = item.name || '';
     const normName = normalizeText(name);
+    const isStandalonePizza = (normalized = '') =>
+      normalized.includes('pizza') && !/(esfih|esfiha)/.test(normalized);
     if (normName.includes('combo')) return true;
-    if (normName.includes('pizza')) return false;
+    if (isStandalonePizza(normName)) return false;
 
     const entry = findCatalogEntry(name);
     if (!entry) return false;
     const entryNorm = normalizeText(entry.name || '');
     if (entryNorm.includes('combo')) return true;
-    if (entryNorm.includes('pizza')) return false;
+    if (isStandalonePizza(entryNorm)) return false;
     return true;
   };
 
