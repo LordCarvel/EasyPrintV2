@@ -209,7 +209,7 @@ export function Home() {
   const extractQtyFromName = (name = '') => {
     const match = name.match(/(\d+)\s*(?:esfihas?|esfiha|un|unidades?)/i);
     if (match) return match[1];
-    const comboMatch = name.match(/combo\s*(\d+)/i);
+    const comboMatch = name.match(/combo\s*(?:de\s*)?(\d+)\s*(?:esfihas?|esfiha|un|unidades?)/i);
     if (comboMatch) return comboMatch[1];
     return '';
   };
@@ -219,10 +219,10 @@ export function Home() {
 
     const name = item.name || '';
     const isCombo = /combo/i.test(name);
-    if (!isCombo) {
-      const nameQty = extractQtyFromName(name);
-      if (nameQty) return nameQty;
-    }
+    const nameQty = extractQtyFromName(name);
+    if (nameQty) return nameQty;
+
+    if (isCombo) return '1';
 
     const priceValue = toNumber(item.price);
     const unitPrice = findUnitPrice(name);
@@ -236,8 +236,22 @@ export function Home() {
     return '';
   };
 
+  const getDisplayQty = (item = {}) => {
+    const fallbackQty = item.qty || item.inferredQty || '';
+    if (!fallbackQty) return '';
+
+    const normName = normalizeText(item.name || '');
+    if (!normName.includes('combo')) return fallbackQty;
+
+    // For combos, only trust explicit qty (line item) or explicit qty in name (ex.: Combo 10 Esfihas).
+    if (item.explicitQty) return item.explicitQty;
+    const comboQtyFromName = extractQtyFromName(item.name || '');
+    if (comboQtyFromName) return comboQtyFromName;
+    return '1';
+  };
+
   const shouldShowQty = (item, items = [], index = -1, orderMeta = {}) => {
-    const qty = item.qty || item.inferredQty;
+    const qty = getDisplayQty(item);
     if (!qty) return false;
     const name = item.name || '';
     const normName = normalizeText(name);
@@ -460,8 +474,9 @@ export function Home() {
       }
     }
     items = items.map((item) => {
-      const inferredQty = inferQty(item);
-      return { ...item, inferredQty, qty: item.qty || inferredQty };
+      const explicitQty = item.qty || '';
+      const inferredQty = explicitQty ? '' : inferQty(item);
+      return { ...item, explicitQty, inferredQty, qty: explicitQty || inferredQty };
     });
 
     return {
@@ -502,11 +517,6 @@ export function Home() {
     if (template.showBranch && order.store) {
       html += `<div style="text-align:center; font-size:12px; margin-top:0px; font-weight:700;">${render(order.store)}</div>`;
     }
-    if (template.showOrderNumber && order.number) {
-      html += `<div style="text-align:center; font-weight:700; font-size:22px; letter-spacing:1px; margin-top:6px;">${render(
-        order.number
-      )}</div>`;
-    }
     if (template.showCustomer && order.customer) {
       html += `<div style="text-align:center; font-size:14px; margin-top:2px; font-weight:700;">${render(
         order.customer
@@ -545,6 +555,11 @@ export function Home() {
         order.elapsed
       )}</div>`;
     }
+    if (template.showOrderNumber && order.number) {
+      html += `<div style="text-align:center; font-weight:700; font-size:22px; letter-spacing:1px; margin-top:6px;">${render(
+        order.number
+      )}</div>`;
+    }
     html += `<div style="margin:8px 0; border-bottom:1px dashed #000;"></div>`;
     const addressRows = [];
     if (template.showAddress && order.address.street) addressRows.push(order.address.street);
@@ -568,7 +583,7 @@ export function Home() {
 
       order.items.forEach((item, index) => {
         html += `<div style="display:flex; justify-content:space-between; align-items:flex-start; column-gap:8px; margin-top:6px;">`;
-        const qty = item.qty || item.inferredQty;
+        const qty = getDisplayQty(item);
         const label = shouldShowQty(item, order.items, index, order) ? `x${qty} ${item.name}` : item.name;
         html += `<span style="flex:1; word-break:break-word; font-weight:700;">${render(label)}</span>`;
         html += `<span style="white-space:nowrap; font-weight:700;">${render(currency(item.price || ''))}</span>`;
