@@ -214,24 +214,30 @@ export function Home() {
     return '';
   };
 
-  const inferQty = (item) => {
-    if (item.qty) return item.qty;
-
-    const name = item.name || '';
-    const isCombo = /combo/i.test(name);
-    const nameQty = extractQtyFromName(name);
-    if (nameQty) return nameQty;
-
-    if (isCombo) return '1';
-
-    const priceValue = toNumber(item.price);
-    const unitPrice = findUnitPrice(name);
+  const inferQtyFromPrice = (itemName = '', priceLine = '') => {
+    const priceValue = toNumber(priceLine);
+    const unitPrice = findUnitPrice(itemName);
     if (unitPrice && priceValue > 0) {
       const raw = priceValue / unitPrice;
       const rounded = Math.round(raw);
       const closeEnough = rounded > 0 && Math.abs(raw - rounded) <= 0.2;
       if (closeEnough) return String(rounded);
     }
+    return '';
+  };
+
+  const inferQty = (item) => {
+    if (item.qty) return item.qty;
+
+    const name = item.name || '';
+    const isCombo = /combo/i.test(name);
+    if (isCombo) return inferQtyFromPrice(name, item.price) || '1';
+
+    const nameQty = extractQtyFromName(name);
+    if (nameQty) return nameQty;
+
+    const qtyByPrice = inferQtyFromPrice(name, item.price);
+    if (qtyByPrice) return qtyByPrice;
 
     return '';
   };
@@ -243,11 +249,17 @@ export function Home() {
     const normName = normalizeText(item.name || '');
     if (!normName.includes('combo')) return fallbackQty;
 
-    // For combos, only trust explicit qty (line item) or explicit qty in name (ex.: Combo 10 Esfihas).
-    if (item.explicitQty) return item.explicitQty;
-    const comboQtyFromName = extractQtyFromName(item.name || '');
-    if (comboQtyFromName) return comboQtyFromName;
-    return '1';
+    // For combos, prefer the number inferred by price (qtd de combos) instead of the combo size in the name.
+    const qtyByPrice = inferQtyFromPrice(item.name || '', item.price || '');
+    if (qtyByPrice) return qtyByPrice;
+
+    if (item.explicitQty) {
+      const comboQtyFromName = extractQtyFromName(item.name || '');
+      if (comboQtyFromName && item.explicitQty === comboQtyFromName) return '1';
+      return item.explicitQty;
+    }
+
+    return fallbackQty || '1';
   };
 
   const shouldShowQty = (item, items = [], index = -1, orderMeta = {}) => {
@@ -390,9 +402,12 @@ export function Home() {
         const priceMatch = line.match(/(-?\s*R\$\s*\d[\d.,]*)/i);
         const price = priceMatch ? priceMatch[1].trim() : '';
         const namePart = priceMatch ? line.replace(priceMatch[1], '').trim() : line.trim();
-        const qtyMatch = namePart.match(/x\s*(\d+)$/i);
-        const qty = qtyMatch ? qtyMatch[1] : '';
-        const cleanName = qty ? namePart.replace(/x\s*\d+$/i, '').trim() : namePart;
+        const leadingQtyMatch = namePart.match(/^x\s*(\d+)\b/i);
+        const trailingQtyMatch = namePart.match(/\bx\s*(\d+)\s*$/i);
+        const qty = leadingQtyMatch?.[1] || trailingQtyMatch?.[1] || '';
+        let cleanName = namePart;
+        if (leadingQtyMatch) cleanName = cleanName.replace(/^x\s*\d+\b/i, '').trim();
+        if (trailingQtyMatch) cleanName = cleanName.replace(/\bx\s*\d+\s*$/i, '').trim();
         return { name: cleanName, price, qty };
       };
 
@@ -420,17 +435,45 @@ export function Home() {
           i += 1;
           continue;
         }
-        const next = afterItems[i + 1];
-        if (next && isPrice(next)) {
-          items.push({ name, price: next, qty: finalQty, isPriceOnly: false });
-          pendingQty = '';
-          i += 2;
-          continue;
+        let mergedName = name;
+        let mergedQty = finalQty;
+        let cursor = i + 1;
+        let resolved = false;
+
+        while (cursor < afterItems.length) {
+          const candidate = afterItems[cursor];
+          const candidateLow = afterLower[cursor];
+          if (isTotals(candidateLow) || candidateLow.includes('substituir itens')) break;
+          if (/^\d+$/.test(candidate)) break;
+
+          if (isPrice(candidate)) {
+            items.push({ name: mergedName, price: candidate, qty: mergedQty, isPriceOnly: false });
+            pendingQty = '';
+            i = cursor + 1;
+            resolved = true;
+            break;
+          }
+
+          const parsedCandidate = splitNamePriceQty(candidate);
+          if (parsedCandidate.price) {
+            const nextName = [mergedName, parsedCandidate.name].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+            items.push({ name: nextName, price: parsedCandidate.price, qty: mergedQty || parsedCandidate.qty, isPriceOnly: false });
+            pendingQty = '';
+            i = cursor + 1;
+            resolved = true;
+            break;
+          }
+
+          if (parsedCandidate.qty && !mergedQty) mergedQty = parsedCandidate.qty;
+          mergedName = [mergedName, parsedCandidate.name || candidate].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+          cursor += 1;
         }
 
-        items.push({ name, price: '', qty: finalQty || '' });
+        if (resolved) continue;
+
+        items.push({ name: mergedName, price: '', qty: mergedQty || '' });
         pendingQty = '';
-        i += 1;
+        i = cursor;
       }
       let totalsIdx = i;
       while (totalsIdx < afterItems.length) {
