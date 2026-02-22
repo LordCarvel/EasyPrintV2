@@ -201,6 +201,17 @@ export function Home() {
     return best;
   };
 
+  const isCatalogLikeItem = (itemName = '') => {
+    const normItem = normalizeText(itemName);
+    if (!normItem) return false;
+    const source = catalogEntries.length ? catalogEntries : DEFAULT_CATALOG;
+    return source.some((entry) => {
+      const normEntry = normalizeText(entry.name || '');
+      if (!normEntry) return false;
+      return normItem === normEntry || normItem.includes(normEntry) || normEntry.includes(normItem);
+    });
+  };
+
   const findUnitPrice = (itemName) => {
     const entry = findCatalogEntry(itemName);
     return entry ? entry.price : null;
@@ -461,6 +472,12 @@ export function Home() {
             pendingQty = '';
             i = cursor + 1;
             resolved = true;
+            break;
+          }
+
+          // If current line looks like a free-text note and the next line is a catalog item,
+          // keep them separated (avoids merging "observação" into the next flavor line).
+          if (!isCatalogLikeItem(mergedName) && isCatalogLikeItem(parsedCandidate.name || candidate)) {
             break;
           }
 
