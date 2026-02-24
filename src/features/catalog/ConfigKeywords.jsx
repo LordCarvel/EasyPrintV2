@@ -53,12 +53,38 @@ Pizza:5,49;`
   },
   {
     id: 2,
+    name: 'Pizzas e Combos',
+    content: `Pizza 35cm (8 Fatias):49,99;
+Pizza 40cm (10 Fatias):59,99;
+Combo 2 Pizzas 35cm:89,99;
+Combo 3 Pizzas 35cm:129,99;`
+  },
+  {
+    id: 3,
     name: 'Refrigerantes',
     content: `Coca-Cola Zero 2L:17,99;
 Guarana Lata:6,50;
 Agua:3,50;`
   }
 ];
+
+const normalizeCatalogKey = (value = '') =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const ensureCatalogDefaults = (input) => {
+  if (!Array.isArray(input) || !input.length) return DEFAULT_CATALOGS;
+  const hasPizzasCombos = input.some(
+    (catalog) => normalizeCatalogKey(catalog?.name || '') === normalizeCatalogKey('Pizzas e Combos')
+  );
+  if (hasPizzasCombos) return input;
+
+  const nextId = Math.max(...input.map((catalog) => Number(catalog?.id) || 0), 0) + 1;
+  return [...input, { ...DEFAULT_CATALOGS[1], id: nextId }];
+};
 
 const mergeKeywordDefaults = (items) =>
   items.map((item) => ({
@@ -101,7 +127,11 @@ export function ConfigKeywords() {
       try {
         const parsed = JSON.parse(savedCatalogs);
         if (Array.isArray(parsed)) {
-          setCatalogs(parsed);
+          const withDefaults = ensureCatalogDefaults(parsed);
+          setCatalogs(withDefaults);
+          if (withDefaults.length !== parsed.length) {
+            localStorage.setItem('catalogs', JSON.stringify(withDefaults));
+          }
         }
       } catch {
         setCatalogs(DEFAULT_CATALOGS);
@@ -162,7 +192,7 @@ export function ConfigKeywords() {
   };
 
   const resetCatalogs = () => {
-    if (window.confirm('Voltar para os 2 catalogos padrao (Esfihas e Refrigerantes)?')) {
+    if (window.confirm('Voltar para os 3 catalogos padrao (Esfihas, Pizzas e Combos e Refrigerantes)?')) {
       saveCatalogs(DEFAULT_CATALOGS);
       setNewCatalogName('Novo catalogo');
     }
@@ -277,7 +307,7 @@ export function ConfigKeywords() {
 
             <button type="button" className="btn-reset-catalogs icon-with-label" onClick={resetCatalogs}>
               <Icon name="refresh" size={14} />
-              <span>2 catalogos padrao</span>
+              <span>3 catalogos padrao</span>
             </button>
           </div>
         </div>

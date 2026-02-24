@@ -23,6 +23,8 @@ const DEFAULT_CATALOG = [
   { name: 'Atum', price: 5.49 },
   { name: 'Palmito', price: 5.49 },
   { name: 'Pizza', price: 5.49 },
+  { name: 'Pizza 35cm (8 Fatias)', price: 49.99, catalogName: 'Pizzas e Combos' },
+  { name: 'Pizza 40cm (10 Fatias)', price: 59.99, catalogName: 'Pizzas e Combos' },
   { name: 'Brigadeiro', price: 6.49 },
   { name: 'Confetes', price: 6.49 },
   { name: 'Chocolate', price: 6.49 },
@@ -34,7 +36,9 @@ const DEFAULT_CATALOG = [
   { name: 'Combo 12 Esfihas Especiais', price: 46.99 },
   { name: 'Combo 15 Esfihas + Kuat 2L', price: 72.99 },
   { name: 'Combo 20 Esfihas + Kuat 2L', price: 84.99 },
-  { name: 'Combo 20 Esfihas de Carne + Coca 2L', price: 82.99 }
+  { name: 'Combo 20 Esfihas de Carne + Coca 2L', price: 82.99 },
+  { name: 'Combo 2 Pizzas 35cm', price: 89.99, catalogName: 'Pizzas e Combos' },
+  { name: 'Combo 3 Pizzas 35cm', price: 129.99, catalogName: 'Pizzas e Combos' }
 ];
 
 const DEFAULT_PRINT_TEMPLATE = {
@@ -139,6 +143,7 @@ export function Home() {
     if (!Array.isArray(rawCatalogs)) return DEFAULT_CATALOG;
     const entries = [];
     rawCatalogs.forEach((catalog) => {
+      const catalogName = catalog?.name || '';
       const content = catalog?.content || '';
       content
         .split(';')
@@ -149,7 +154,7 @@ export function Home() {
           if (!namePart || !pricePart) return;
           const price = toNumber(pricePart);
           if (price > 0) {
-            entries.push({ name: namePart.trim(), price });
+            entries.push({ name: namePart.trim(), price, catalogName });
           }
         });
     });
@@ -161,7 +166,7 @@ export function Home() {
     DEFAULT_CATALOG.forEach((entry) => {
       const key = normalizeText(entry.name);
       if (!merged.has(key)) {
-        merged.set(key, entry);
+        merged.set(key, { ...entry, catalogName: entry.catalogName || '' });
       }
     });
     return Array.from(merged.values());
@@ -170,34 +175,141 @@ export function Home() {
   const findCatalogEntry = (itemName) => {
     const normItem = normalizeText(itemName);
     if (!normItem) return null;
-    let best = null;
-    let bestScore = -1;
-    let bestLen = -Infinity;
     const source = catalogEntries.length ? catalogEntries : DEFAULT_CATALOG;
-    source.forEach((entry) => {
-      const normEntry = normalizeText(entry.name);
-      if (!normEntry) return;
+    const isComboItem = normItem.includes('combo');
+
+    const pickBest = (preferCombosOnly = false) => {
+      let best = null;
+      let bestScore = -1;
+      let bestLen = -Infinity;
+
+      source.forEach((entry) => {
+        const normEntry = normalizeText(entry.name);
+        if (!normEntry) return;
+        if (preferCombosOnly && !normEntry.includes('combo')) return;
+
+        let score = 0;
+        let tieLen = 0;
+        if (normItem === normEntry) {
+          score = 3;
+          tieLen = normEntry.length;
+        } else if (normItem.includes(normEntry)) {
+          score = 2;
+          tieLen = normEntry.length;
+        } else if (normEntry.includes(normItem)) {
+          score = 1;
+          tieLen = -normEntry.length;
+        } else {
+          return;
+        }
+
+        if (score > bestScore || (score === bestScore && tieLen > bestLen)) {
+          best = entry;
+          bestScore = score;
+          bestLen = tieLen;
+        }
+      });
+
+      return best;
+    };
+
+    if (isComboItem) {
+      const comboMatch = pickBest(true);
+      if (comboMatch) return comboMatch;
+    }
+
+    return pickBest(false);
+  };
+
+  const isPizzaOrComboName = (name = '') => {
+    const norm = normalizeText(name);
+    return norm.includes('pizza') || norm.includes('combo');
+  };
+
+  const isPizzaComboCatalogName = (catalogName = '') => {
+    const norm = normalizeText(catalogName);
+    return norm.includes('pizza') || norm.includes('combo');
+  };
+
+  const getPizzaComboCandidates = (itemName = '') => {
+    const source = catalogEntries.length ? catalogEntries : DEFAULT_CATALOG;
+    const normItem = normalizeText(itemName);
+    const isComboItem = normItem.includes('combo');
+    const isPizzaItem = normItem.includes('pizza');
+
+    const topicCandidates = source.filter((entry) => isPizzaComboCatalogName(entry.catalogName || ''));
+    const nameCandidates = source.filter((entry) => isPizzaOrComboName(entry.name || ''));
+    const baseCandidates = topicCandidates.length
+      ? topicCandidates
+      : nameCandidates.length
+        ? nameCandidates
+        : source;
+
+    if (isComboItem) {
+      const comboOnly = baseCandidates.filter((entry) =>
+        normalizeText(entry.name || '').includes('combo')
+      );
+      return comboOnly.length ? comboOnly : baseCandidates;
+    }
+
+    if (isPizzaItem) {
+      const pizzaOnly = baseCandidates.filter((entry) => {
+        const entryNorm = normalizeText(entry.name || '');
+        return entryNorm.includes('pizza') && !entryNorm.includes('combo');
+      });
+      return pizzaOnly.length ? pizzaOnly : baseCandidates;
+    }
+
+    return baseCandidates;
+  };
+
+  const inferQtyFromCandidateEntries = (itemName = '', priceLine = '', candidates = []) => {
+    const priceValue = toNumber(priceLine);
+    if (!(priceValue > 0) || !Array.isArray(candidates) || !candidates.length) return null;
+
+    const normItem = normalizeText(itemName);
+    let best = null;
+
+    candidates.forEach((entry) => {
+      const unitPrice = Number(entry?.price || 0);
+      if (!(unitPrice > 0)) return;
+
+      const raw = priceValue / unitPrice;
+      const rounded = Math.round(raw);
+      const delta = Math.abs(raw - rounded);
+      if (rounded <= 0 || delta > 0.2) return;
+
+      const entryNorm = normalizeText(entry.name || '');
+      if (!entryNorm) return;
+
       let score = 0;
-      let tieLen = 0;
-      if (normItem === normEntry) {
+      if (normItem === entryNorm) {
+        score = 4;
+      } else if (normItem.includes(entryNorm) || entryNorm.includes(normItem)) {
         score = 3;
-        tieLen = normEntry.length;
-      } else if (normItem.includes(normEntry)) {
-        score = 2;
-        tieLen = normEntry.length;
-      } else if (normEntry.includes(normItem)) {
-        score = 1;
-        tieLen = -normEntry.length;
       } else {
-        return;
+        if (normItem.includes('combo') && entryNorm.includes('combo')) score += 2;
+        if (normItem.includes('pizza') && entryNorm.includes('pizza')) score += 2;
       }
 
-      if (score > bestScore || (score === bestScore && tieLen > bestLen)) {
-        best = entry;
-        bestScore = score;
-        bestLen = tieLen;
+      const candidate = {
+        qty: String(rounded),
+        entry,
+        score,
+        delta,
+        len: entryNorm.length
+      };
+
+      if (
+        !best ||
+        candidate.score > best.score ||
+        (candidate.score === best.score && candidate.delta < best.delta) ||
+        (candidate.score === best.score && candidate.delta === best.delta && candidate.len > best.len)
+      ) {
+        best = candidate;
       }
     });
+
     return best;
   };
 
@@ -218,14 +330,22 @@ export function Home() {
   };
 
   const extractQtyFromName = (name = '') => {
-    const match = name.match(/(\d+)\s*(?:esfihas?|esfiha|un|unidades?)/i);
+    const match = name.match(/(\d+)\s*(?:esfihas?|esfiha|pizzas?|pizza|fatias?|un|unidades?)/i);
     if (match) return match[1];
-    const comboMatch = name.match(/combo\s*(?:de\s*)?(\d+)\s*(?:esfihas?|esfiha|un|unidades?)/i);
+    const comboMatch = name.match(
+      /combo\s*(?:de\s*)?(\d+)\s*(?:esfihas?|esfiha|pizzas?|pizza|fatias?|un|unidades?)/i
+    );
     if (comboMatch) return comboMatch[1];
     return '';
   };
 
   const inferQtyFromPrice = (itemName = '', priceLine = '') => {
+    if (isPizzaOrComboName(itemName)) {
+      const candidates = getPizzaComboCandidates(itemName);
+      const inferredFromTopic = inferQtyFromCandidateEntries(itemName, priceLine, candidates);
+      if (inferredFromTopic?.qty) return inferredFromTopic.qty;
+    }
+
     const priceValue = toNumber(priceLine);
     const unitPrice = findUnitPrice(itemName);
     if (unitPrice && priceValue > 0) {
@@ -241,8 +361,13 @@ export function Home() {
     if (item.qty) return item.qty;
 
     const name = item.name || '';
+    const normName = normalizeText(name);
     const isCombo = /combo/i.test(name);
     if (isCombo) return inferQtyFromPrice(name, item.price) || '1';
+
+    if (normName.includes('pizza')) {
+      return inferQtyFromPrice(name, item.price);
+    }
 
     const nameQty = extractQtyFromName(name);
     if (nameQty) return nameQty;
@@ -260,13 +385,20 @@ export function Home() {
     const normName = normalizeText(item.name || '');
     if (!normName.includes('combo')) return fallbackQty;
 
+    const comboCandidates = getPizzaComboCandidates(item.name || '');
+    const comboInference = inferQtyFromCandidateEntries(item.name || '', item.price || '', comboCandidates);
+
     // For combos, prefer the number inferred by price (qtd de combos) instead of the combo size in the name.
-    const qtyByPrice = inferQtyFromPrice(item.name || '', item.price || '');
+    const qtyByPrice = comboInference?.qty || inferQtyFromPrice(item.name || '', item.price || '');
     if (qtyByPrice) return qtyByPrice;
 
     if (item.explicitQty) {
       const comboQtyFromName = extractQtyFromName(item.name || '');
+      const comboQtyFromCatalog = extractQtyFromName(
+        comboInference?.entry?.name || findCatalogEntry(item.name || '')?.name || ''
+      );
       if (comboQtyFromName && item.explicitQty === comboQtyFromName) return '1';
+      if (comboQtyFromCatalog && item.explicitQty === comboQtyFromCatalog) return '1';
       return item.explicitQty;
     }
 
@@ -276,6 +408,7 @@ export function Home() {
   const shouldShowQty = (item, items = [], index = -1, orderMeta = {}) => {
     const qty = getDisplayQty(item);
     if (!qty) return false;
+    const qtyNumber = Number(qty);
     const name = item.name || '';
     const normName = normalizeText(name);
     const isStandalonePizza = (normalized = '') =>
@@ -305,6 +438,7 @@ export function Home() {
       return false;
     };
     if (normName.includes('combo')) return true;
+    if (normName.includes('pizza') && qtyNumber > 1) return true;
     if (isEsfiha(normName)) return true;
     if (isStandalonePizza(normName)) return isPizzaInEsfihaContext();
 
