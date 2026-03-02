@@ -440,6 +440,7 @@ export function Home() {
     if (normName.includes('combo')) return true;
     if (normName.includes('pizza') && qtyNumber > 1) return true;
     if (isEsfiha(normName)) return true;
+    if (item.explicitQty) return true;
     if (isStandalonePizza(normName)) return isPizzaInEsfihaContext();
 
     const entry = findCatalogEntry(name);
@@ -506,16 +507,51 @@ export function Home() {
       contactPhone = parts[0].trim();
       contactId = parts[1]?.trim() || '';
     }
-    const addressStartIdx = lowerLines.findIndex(
-      (l) => l.startsWith('r.') || l.startsWith('rua') || l.includes(' - ')
+    const itemsStart = lowerLines.findIndex((l) => l.startsWith('itens no pedido'));
+    const isLikelyAddressLine = (line = '') => {
+      const normalized = normalizeText(line).replace(/\s+/g, ' ').trim();
+      if (!normalized) return false;
+      if (/^(r\.?|rua|av\.?|avenida|al\.?|alameda|travessa|tv\.?|estrada|est\.?|rod\.?|rodovia|praca|largo)\b/.test(normalized)) {
+        return true;
+      }
+      const hasNeighborhoodPattern = /\s-\s/.test(line);
+      const hasAddressNumber = /,\s*\d+\b/.test(line) || /\bn[ºo]?\s*\d+\b/i.test(line);
+      const hasZipCode = /\b\d{5}-?\d{3}\b/.test(line);
+      return hasNeighborhoodPattern && (hasAddressNumber || hasZipCode);
+    };
+    const isAddressStopLine = (line = '') => {
+      const normalized = normalizeText(line);
+      if (!normalized) return true;
+      return (
+        normalized.startsWith('entrega ') ||
+        normalized.startsWith('confirmacao') ||
+        normalized.startsWith('pedido ') ||
+        normalized.startsWith('feito') ||
+        normalized.startsWith('localizador') ||
+        normalized.startsWith('via ifood') ||
+        normalized.startsWith('copiar link') ||
+        normalized.startsWith('compartilhar') ||
+        normalized.startsWith('saiba mais') ||
+        normalized.startsWith('itens no pedido') ||
+        normalized.startsWith('substituir itens') ||
+        normalized.startsWith('ha ')
+      );
+    };
+    const addressSearchLimit = itemsStart >= 0 ? itemsStart : lines.length;
+    const addressStartIdx = lines.findIndex(
+      (line, idx) => idx < addressSearchLimit && isLikelyAddressLine(line)
     );
     const address = { street: '', complement: '' };
     if (addressStartIdx >= 0) {
       address.street = lines[addressStartIdx].replace(/[\u2022\u25CF]/g, ' • ');
-      const next = lines[addressStartIdx + 1] || '';
-      if (next && !/entrega/.test(lowerLines[addressStartIdx + 1] || '')) {
-        address.complement = next.replace(/[\u2022\u25CF]/g, ' • ');
+      const complementParts = [];
+      for (let idx = addressStartIdx + 1; idx < addressSearchLimit; idx += 1) {
+        const next = lines[idx] || '';
+        if (!next || isAddressStopLine(next) || isLikelyAddressLine(next)) break;
+        complementParts.push(next.replace(/[\u2022\u25CF]/g, ' • '));
+        if (complementParts.length >= 2) break;
       }
+      address.complement = complementParts.join(' • ');
     }
     const deliveryType =
       findLine((l) => l.startsWith('entrega ') && !l.includes('prevista')) ||
@@ -526,7 +562,6 @@ export function Home() {
         (l.includes('pendente') || l.includes('confirm') || l.includes('entregue') || l.includes('saiu')) &&
         !l.includes('prevista')
     );
-    const itemsStart = lowerLines.findIndex((l) => l.startsWith('itens no pedido'));
     const totalsKeywords = ['taxa de entrega', 'taxa de servi', 'subtotal', 'incentivos', 'valores cobrados'];
     let items = [];
     let incentives = [];
@@ -549,10 +584,33 @@ export function Home() {
         const namePart = priceMatch ? line.replace(priceMatch[1], '').trim() : line.trim();
         const leadingQtyMatch = namePart.match(/^x\s*(\d+)\b/i);
         const trailingQtyMatch = namePart.match(/\bx\s*(\d+)\s*$/i);
-        const qty = leadingQtyMatch?.[1] || trailingQtyMatch?.[1] || '';
+        const leadingPlainQtyCandidate = namePart.match(/^(\d+)\s+(.+)$/);
+        const normalizedLeadingRemainder = normalizeText(leadingPlainQtyCandidate?.[2] || '');
+        const leadingPlainQtyMatch =
+          leadingPlainQtyCandidate &&
+          Number(leadingPlainQtyCandidate[1]) > 0 &&
+          Number(leadingPlainQtyCandidate[1]) <= 9 &&
+          !/^(queijos?|sabores?)/.test(normalizedLeadingRemainder)
+            ? leadingPlainQtyCandidate
+            : null;
+        const trailingPlainQtyCandidate = namePart.match(/^(.+?)\s+(\d+)\s*$/);
+        const trailingPlainQtyMatch =
+          trailingPlainQtyCandidate &&
+          Number(trailingPlainQtyCandidate[2]) > 0 &&
+          Number(trailingPlainQtyCandidate[2]) <= 9
+            ? trailingPlainQtyCandidate
+            : null;
+        const qty =
+          leadingQtyMatch?.[1] ||
+          trailingQtyMatch?.[1] ||
+          leadingPlainQtyMatch?.[1] ||
+          trailingPlainQtyMatch?.[2] ||
+          '';
         let cleanName = namePart;
         if (leadingQtyMatch) cleanName = cleanName.replace(/^x\s*\d+\b/i, '').trim();
         if (trailingQtyMatch) cleanName = cleanName.replace(/\bx\s*\d+\s*$/i, '').trim();
+        if (leadingPlainQtyMatch) cleanName = leadingPlainQtyMatch[2].trim();
+        if (trailingPlainQtyMatch) cleanName = trailingPlainQtyMatch[1].trim();
         return { name: cleanName, price, qty };
       };
 
