@@ -1,0 +1,78 @@
+{
+  "appId": "easy-printi",
+  "version": 1,
+  "publishes": {
+    "events": [
+      {
+        "name": "incoming_order_registered",
+        "entity": "SharedOrder",
+        "idempotencyKey": "order:{sourceOrderId}",
+        "payloadSchema": {
+          "sourceOrderId": "string",
+          "sourceBranchId": "string",
+          "sourceBranchName": "string",
+          "customerName": "string",
+          "customerPhone": "string",
+          "deliveryAddress": "string",
+          "totalAmount": "number",
+          "operationalDate": "yyyy-MM-dd",
+          "status": "RECEIVED"
+        }
+      },
+      {
+        "name": "incoming_order_cancelled",
+        "entity": "SharedOrder",
+        "idempotencyKey": "order-cancel:{sourceOrderId}",
+        "payloadSchema": {
+          "sourceOrderId": "string",
+          "operationalDate": "yyyy-MM-dd",
+          "status": "CANCELLED"
+        }
+      }
+    ],
+    "state": [
+      {
+        "name": "pending_incoming_orders",
+        "entity": "SharedOrder",
+        "mode": "snapshot"
+      }
+    ]
+  },
+  "consumes": {
+    "commands": [
+      {
+        "name": "mark_order_as_dispatched",
+        "inputSchema": {
+          "sourceOrderId": "string",
+          "hubRunId": "string",
+          "courierName": "string",
+          "deliverySequence": "number"
+        }
+      }
+    ],
+    "state": [
+      {
+        "name": "shared_orders",
+        "entity": "SharedOrder",
+        "scope": "hub"
+      }
+    ]
+  },
+  "examples": {
+    "incoming_order_registered": {
+      "event": "incoming_order_registered",
+      "appId": "easy-printi",
+      "payload": {
+        "sourceOrderId": "EP-12345",
+        "sourceBranchId": "FIL-02",
+        "sourceBranchName": "Filial Centro",
+        "customerName": "Maria",
+        "customerPhone": "5511999999999",
+        "deliveryAddress": "Rua Exemplo, 10",
+        "totalAmount": 72.5,
+        "operationalDate": "2026-03-24",
+        "status": "RECEIVED"
+      }
+    }
+  }
+}
