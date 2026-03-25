@@ -1,6 +1,10 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { Printer } from '../../shared/utils/Printer';
 import { buildHighlighter, escapeHtml } from '../../shared/utils/highlight';
+import {
+  flushDeliveryHubPendingEvents,
+  publishIncomingOrderRegistered
+} from '../../shared/integration/deliveryHub';
 import './Home.css';
 const DEFAULT_CATALOG = [
   { name: 'Carne', price: 4.49 },
@@ -471,6 +475,12 @@ export function Home() {
 
   const render = (value) => highlightText(value ?? '');
 
+  const retryPendingHubEvents = () => {
+    void flushDeliveryHubPendingEvents().catch((error) => {
+      console.error('Falha ao reenviar eventos pendentes do Delivery Hub', error);
+    });
+  };
+
   const parseOrderText = (raw) => {
     const lines = raw
       .split(/\r?\n/)
@@ -917,14 +927,24 @@ export function Home() {
       amount = paymentValueNum || totalValueNum;
     }
 
-    if (parsed.number) {
-      persistCashOrder({
+    const cashPersistResult = parsed.number
+      ? persistCashOrder({
         orderNumber: parsed.number,
         customerName: parsed.customer,
         totalValue: amount,
         paymentMethod: method
-      });
-    }
+      })
+      : null;
+
+    void publishIncomingOrderRegistered({
+      parsed,
+      amount,
+      isReprint: Boolean(cashPersistResult?.alreadyProcessed)
+    }).catch((error) => {
+      console.error('Falha ao publicar pedido no Delivery Hub', error);
+    });
+
+    window.setTimeout(retryPendingHubEvents, 1500);
   };
 
   const persistCashOrder = ({ orderNumber, customerName, totalValue, paymentMethod }) => {
@@ -953,6 +973,11 @@ export function Home() {
         detail: newEntry
       })
     );
+
+    return {
+      alreadyProcessed,
+      entry: newEntry
+    };
   };
 
   const handlePaste = async () => {
@@ -1052,6 +1077,17 @@ export function Home() {
 
   useEffect(() => {
     textareaRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    retryPendingHubEvents();
+
+    const handleOnline = () => {
+      retryPendingHubEvents();
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   return (

@@ -11,6 +11,7 @@
           "sourceOrderId": "string",
           "sourceBranchId": "string",
           "sourceBranchName": "string",
+          "sourceStoreName": "string",
           "customerName": "string",
           "customerPhone": "string",
           "deliveryAddress": "string",
@@ -57,22 +58,5 @@
         "scope": "hub"
       }
     ]
-  },
-  "examples": {
-    "incoming_order_registered": {
-      "event": "incoming_order_registered",
-      "appId": "easy-printi",
-      "payload": {
-        "sourceOrderId": "EP-12345",
-        "sourceBranchId": "FIL-02",
-        "sourceBranchName": "Filial Centro",
-        "customerName": "Maria",
-        "customerPhone": "5511999999999",
-        "deliveryAddress": "Rua Exemplo, 10",
-        "totalAmount": 72.5,
-        "operationalDate": "2026-03-24",
-        "status": "RECEIVED"
-      }
-    }
   }
 }

@@ -1,0 +1,167 @@
+.delivery-hub-config {
+  width: 100%;
+  max-width: 780px;
+  background: var(--color-white);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.delivery-hub-header {
+  border-bottom: 2px solid var(--color-light-gray-model-two);
+  padding-bottom: var(--spacing-md);
+}
+
+.delivery-hub-header h2 {
+  margin: 0 0 var(--spacing-xs) 0;
+  color: var(--color-blue);
+  font-size: 1.3rem;
+}
+
+.delivery-hub-header p {
+  margin: 0;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.delivery-hub-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+
+.delivery-hub-summary-card {
+  border: 1px solid var(--color-light-gray-model-two);
+  border-radius: 8px;
+  background: var(--color-dark-white);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.delivery-hub-summary-card strong {
+  font-size: 1.8rem;
+  color: var(--color-blue);
+}
+
+.delivery-hub-summary-card span {
+  color: #555;
+  font-size: 0.95rem;
+}
+
+.delivery-hub-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.delivery-hub-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.delivery-hub-field label {
+  font-weight: 600;
+  color: var(--color-black);
+}
+
+.delivery-hub-field input,
+.delivery-hub-field textarea {
+  width: 100%;
+  border: 1px solid var(--color-light-gray-model-two);
+  border-radius: 6px;
+  padding: 12px;
+  font: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.delivery-hub-field input:focus,
+.delivery-hub-field textarea:focus {
+  outline: none;
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 2px rgba(119, 162, 232, 0.1);
+}
+
+.delivery-hub-field textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.delivery-hub-field small {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.delivery-hub-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--color-light-gray-model-two);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--color-dark-white);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.delivery-hub-checkbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-blue);
+}
+
+.delivery-hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.delivery-hub-actions button {
+  border: none;
+  border-radius: 6px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 700;
+  font: inherit;
+  background: var(--color-blue);
+  color: var(--color-white);
+}
+
+.delivery-hub-actions button.secondary {
+  background: var(--color-dark-white);
+  color: var(--color-blue);
+  border: 1px solid var(--color-light-gray-model-two);
+}
+
+.delivery-hub-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.delivery-hub-feedback {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--color-dark-white);
+  border: 1px solid var(--color-light-gray-model-two);
+  color: #444;
+}
+
+@media (max-width: 640px) {
+  .delivery-hub-config {
+    padding: var(--spacing-md);
+  }
+
+  .delivery-hub-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-hub-actions button {
+    width: 100%;
+  }
+}

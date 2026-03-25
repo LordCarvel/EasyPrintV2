@@ -48,6 +48,10 @@ export function Header() {
         <Link to="/config-template" className={`header-link ${isActive('/config-template') ? 'active' : ''}`}>
           Comanda
         </Link>
+
+        <Link to="/integracao-hub" className={`header-link ${isActive('/integracao-hub') ? 'active' : ''}`}>
+          Hub
+        </Link>
       </nav>
     </header>
   );

@@ -5,6 +5,7 @@ import { Home } from './features/home/Home';
 import { ConfigKeywords } from './features/catalog/ConfigKeywords';
 import { ConfigTemplate } from './features/template/ConfigTemplate';
 import { CashRegister } from './features/cash-register/CashRegister';
+import { DeliveryHubConfig } from './features/integration/DeliveryHubConfig';
 import './App.css';
 
 function AppContent() {
@@ -17,6 +18,7 @@ function AppContent() {
           <Route path="/catalogo" element={<ConfigKeywords />} />
           <Route path="/config-template" element={<ConfigTemplate />} />
           <Route path="/caixa" element={<CashRegister />} />
+          <Route path="/integracao-hub" element={<DeliveryHubConfig />} />
         </Routes>
       </div>
       <Footer />
