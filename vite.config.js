@@ -12,6 +12,6 @@ export default defineConfig(({ command }) => ({
   plugins: [react()],
   server: {
     port: 5173,
-    open: true
+    open: process.env.ELECTRON_RUN !== '1'
   }
 }))

@@ -2,22 +2,80 @@
   "name": "easyprint",
   "private": true,
   "version": "1.0.0",
+  "description": "Easy Hub desktop app",
+  "author": "LordCarvel",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:desktop": "vite build --base=/",
+    "start": "node --no-warnings=ExperimentalWarning ./server/index.js",
+    "server": "node --no-warnings=ExperimentalWarning ./server/index.js",
+    "server:env": "node --env-file=.env --no-warnings=ExperimentalWarning ./server/index.js",
+    "server:seed": "node --no-warnings=ExperimentalWarning ./server/seed.js",
+    "server:seed:env": "node --env-file=.env --no-warnings=ExperimentalWarning ./server/seed.js",
+    "test:routing": "node --no-warnings=ExperimentalWarning ./server/routing.test.js",
+    "desktop": "node ./scripts/run-electron-dev.cjs",
+    "electron": "node ./scripts/run-electron-dev.cjs",
+    "electron:prod": "npm run build:desktop && electron .",
+    "installer": "npm run build:desktop && electron-builder --win nsis --x64",
+    "dist:win": "npm run installer",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist -r https://github.com/LordCarvel/EasyPrintV2.git"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.0",
+    "html2canvas": "^1.4.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.30.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",
+    "electron": "^28.3.3",
+    "electron-builder": "^26.15.3",
     "gh-pages": "^6.1.1",
     "vite": "^5.0.0"
+  },
+  "build": {
+    "appId": "com.lordcarvel.easyhub",
+    "productName": "Easy Hub",
+    "electronDist": "node_modules/electron/dist",
+    "electronVersion": "28.3.3",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "package.json",
+      "electron/**/*",
+      "dist/**/*"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "EasyHub-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Easy Hub",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
