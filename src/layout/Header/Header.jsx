@@ -41,6 +41,10 @@ export function Header() {
           Caixa
         </Link>
 
+        <Link to="/roteamento" className={`header-link ${isActive('/roteamento') ? 'active' : ''}`}>
+          Roteamento
+        </Link>
+
         <Link to="/catalogo" className={`header-link ${isActive('/catalogo') ? 'active' : ''}`}>
           Cardapio e Palavras
         </Link>
@@ -49,9 +53,6 @@ export function Header() {
           Comanda
         </Link>
 
-        <Link to="/integracao-hub" className={`header-link ${isActive('/integracao-hub') ? 'active' : ''}`}>
-          Hub
-        </Link>
       </nav>
     </header>
   );

@@ -1,0 +1,225 @@
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-family: var(--font-roboto);
+  font-size: 0.95rem;
+  color: var(--color-black);
+}
+
+.toggleRow input {
+  width: 18px;
+  height: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-family: var(--font-roboto);
+  color: var(--color-black);
+  font-size: 0.9rem;
+}
+
+.infoLine {
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(119, 162, 232, 0.1);
+  color: #36588e;
+  font-size: 0.88rem;
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.metaCard {
+  padding: 0.8rem 0.9rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.04);
+}
+
+.metaLabel {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--muted-text);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metaCard strong {
+  font-size: 1.15rem;
+  color: var(--color-blue);
+}
+
+.actionsRow {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.statusBox {
+  padding: 0.85rem 0.95rem;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.75);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--color-black);
+  font-size: 0.88rem;
+}
+
+.statusBox[data-error='true'] {
+  border-color: rgba(255, 85, 85, 0.2);
+  background: rgba(255, 85, 85, 0.08);
+  color: #9e2d2d;
+}
+
+.statusInline {
+  margin-top: 0.25rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(243, 244, 246, 0.9);
+  color: #334155;
+}
+
+.statusInline[data-tone='warning'] {
+  background: rgba(254, 242, 242, 0.95);
+  color: #991b1b;
+}
+
+.statusInline[data-tone='success'] {
+  background: rgba(236, 253, 245, 0.95);
+  color: #166534;
+}
+
+.commandSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.sectionTitle {
+  font-family: var(--font-montserrat);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.commandList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.commandCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(119, 162, 232, 0.18);
+}
+
+.commandHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.commandHeader strong {
+  color: var(--color-blue);
+  font-size: 0.92rem;
+}
+
+.commandHeader span {
+  color: var(--muted-text);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.commandMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: #4b5563;
+  font-size: 0.82rem;
+}
+
+.commandCard textarea {
+  min-height: 92px;
+  resize: vertical;
+  background: rgba(252, 250, 250, 0.9);
+}
+
+.commandActions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.pendingEventList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.pendingEventCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(255, 248, 248, 0.9);
+  border: 1px solid rgba(239, 68, 68, 0.16);
+}
+
+.pendingEventMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+  color: #4b5563;
+  font-size: 0.82rem;
+}
+
+.pendingEventError {
+  color: #991b1b;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.emptyState {
+  padding: 0.95rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px dashed rgba(0, 0, 0, 0.08);
+  color: var(--muted-text);
+  text-align: center;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 640px) {
+  .metaGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .commandHeader,
+  .commandActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

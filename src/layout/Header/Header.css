@@ -1,7 +1,7 @@
 ﻿.header {
   position: fixed;
   top: 0;
-  left: 0;
+  left: var(--hub-sidebar-offset, 0);
   right: 0;
   height: var(--header-height);
   background-color: var(--color-white);
@@ -59,7 +59,9 @@
 .header-right {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
 }
 
 .header-link {
@@ -67,7 +69,7 @@
   color: var(--color-black);
   font-size: 0.85rem;
   font-weight: 500;
-  padding: var(--spacing-xs) var(--spacing-sm);
+  padding: 0.45rem 0.7rem;
   border-radius: 4px;
   transition: all 0.2s ease;
   white-space: nowrap;

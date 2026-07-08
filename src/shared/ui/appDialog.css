@@ -1,0 +1,92 @@
+.app-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(17, 24, 39, 0.42);
+}
+
+.app-dialog-panel {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.1rem;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 24px 70px rgba(17, 24, 39, 0.2);
+}
+
+.app-dialog-title {
+  margin: 0;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.app-dialog-message {
+  margin: 0;
+  color: #4b5563;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.app-dialog-textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  padding: 0.8rem;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  color: #111827;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.app-dialog-button {
+  min-height: 36px;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.app-dialog-button-primary {
+  background: #77a2e8;
+  color: #ffffff;
+}
+
+.app-dialog-panel-danger .app-dialog-button-primary {
+  background: #ff5555;
+}
+
+.app-dialog-button-secondary {
+  border-color: #d9d9d9;
+  background: #fcfafa;
+  color: #111827;
+}
+
+@media (max-width: 520px) {
+  .app-dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .app-dialog-button {
+    width: 100%;
+  }
+}

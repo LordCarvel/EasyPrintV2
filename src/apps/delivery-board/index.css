@@ -1,0 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
+
+:root {
+  --font-lato: 'Lato', Arial, Helvetica, sans-serif;
+  --font-poppins: 'Poppins', Arial, Helvetica, sans-serif;
+  --font-roboto: 'Roboto', Arial, Helvetica, sans-serif;
+  --font-montserrat: 'Montserrat', Arial, Helvetica, sans-serif;
+  --font-ibm-plex-mono: 'IBM Plex Mono', 'Courier New', monospace;
+  --font-inter: 'Inter', Arial, Helvetica, sans-serif;
+  --color-white: #ffffff;
+  --color-dark-white: #fcfafa;
+  --color-light-gray-model-one: #d9d9d96c;
+  --color-light-gray-model-two: #d9d9d9;
+  --color-gray: #9ca3af;
+  --color-blue: #77a2e8;
+  --color-black: #111827;
+  --color-yellow: #fee440;
+  --color-red: #ff5555;
+  --space-xxs: 0.125rem;
+  --space-xs: 0.25rem;
+  --space-sm: 0.4rem;
+  --space-md: 0.6rem;
+  --space-lg: 1rem;
+  --space-xl: 1.5rem;
+  --btn-font-size: 0.85rem;
+  --btn-radius: 6px;
+  --input-font-size: 0.95rem;
+  --card-radius: 10px;
+  --card-shadow: 0 6px 18px rgba(17, 24, 39, 0.06);
+  --surface-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(250, 250, 250, 0.94));
+  --muted-text: #6b7280;
+  --header-height: 64px;
+  --footer-height: 46px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  overflow: hidden;
+  font-family: var(--font-inter);
+  background-color: var(--color-dark-white);
+  color: var(--color-black);
+}
+
+.primary-btn {
+  background-color: var(--color-yellow);
+  border: none;
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-lg);
+  font-weight: 600;
+  font-family: var(--font-poppins);
+  font-size: var(--btn-font-size);
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.primary-btn:hover {
+  background-color: #ffec6b;
+}
+
+.secondary-btn {
+  background-color: var(--color-light-gray-model-two);
+  border: none;
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-md);
+  font-weight: 500;
+  font-family: var(--font-poppins);
+  font-size: var(--btn-font-size);
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.secondary-btn:hover {
+  background-color: #cfd4db;
+}
+
+.add-leva-btn {
+  background-color: var(--color-blue);
+  color: var(--color-white);
+  border: none;
+  border-radius: 6px;
+  padding: var(--space-xs) var(--space-md);
+  font-family: var(--font-poppins);
+  font-weight: 500;
+  font-size: var(--btn-font-size);
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.add-leva-btn:hover {
+  background-color: #6a93d3;
+}
+
+.search-input {
+  width: 70%;
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-roboto);
+  font-size: var(--input-font-size);
+  border: 1px solid var(--color-light-gray-model-two);
+  border-radius: 6px;
+  outline: none;
+  color: var(--color-black);
+  background-color: var(--color-white);
+}
+
+.search-input:focus {
+  border-color: var(--color-blue);
+}

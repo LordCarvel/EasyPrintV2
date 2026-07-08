@@ -1,0 +1,102 @@
+.home-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-light-gray-model-two);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+  box-shadow: var(--shadow-soft);
+}
+
+.summary-label {
+  color: #6d6d6d;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.summary-value {
+  color: var(--color-blue-strong);
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.summary-footnote {
+  color: #666666;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.home-compact-input {
+  max-width: 96px;
+}
+
+.adjustment-field {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.home-lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+  gap: var(--spacing-md);
+}
+
+.home-side-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.report-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.cash-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .home-summary-grid,
+  .home-lower-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-config-grid,
+  .cash-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .report-config-grid,
+  .cash-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .adjustment-field {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .home-compact-input {
+    max-width: none;
+  }
+
+  .courier-table td[data-label='Acoes'] .btn {
+    width: 100%;
+  }
+}

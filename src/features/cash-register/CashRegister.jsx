@@ -1,5 +1,7 @@
 ﻿import { Fragment, useEffect, useState } from 'react';
 import { Icon } from '../../shared/ui/Icon';
+import { confirmAction } from '../../shared/ui/appDialog';
+import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
 import './CashRegister.css';
 
 export function CashRegister() {
@@ -28,16 +30,46 @@ export function CashRegister() {
     return () => window.removeEventListener('registerOrder', handleNewOrder);
   }, [orders, processed]);
 
-  const loadOrders = () => {
-    const savedOrders = localStorage.getItem('cashOrders');
-    if (savedOrders) {
-      setOrders(JSON.parse(savedOrders));
+  const readLocalArray = (key) => {
+    try {
+      const saved = localStorage.getItem(key);
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
     }
+  };
 
-    const savedProcessed = localStorage.getItem('cashProcessed');
-    if (savedProcessed) {
-      setProcessed(JSON.parse(savedProcessed));
-    }
+  const saveRegisterState = (nextOrders, nextProcessed = processed) => {
+    const safeOrders = Array.isArray(nextOrders) ? nextOrders : [];
+    const safeProcessed = Array.isArray(nextProcessed) ? nextProcessed : [];
+
+    setOrders(safeOrders);
+    setProcessed(safeProcessed);
+    localStorage.setItem('cashOrders', JSON.stringify(safeOrders));
+    localStorage.setItem('cashProcessed', JSON.stringify(safeProcessed));
+    void saveStoreSettingsPatch({
+      cashOrders: safeOrders,
+      cashProcessed: safeProcessed
+    }).catch((error) => {
+      console.error('Falha ao salvar caixa no perfil da loja', error);
+    });
+  };
+
+  const loadOrders = () => {
+    const localOrders = readLocalArray('cashOrders');
+    const localProcessed = readLocalArray('cashProcessed');
+    setOrders(localOrders);
+    setProcessed(localProcessed);
+
+    void hydrateLocalSettingsFromStore()
+      .then((settings) => {
+        setOrders(Array.isArray(settings.cashOrders) ? settings.cashOrders : localOrders);
+        setProcessed(Array.isArray(settings.cashProcessed) ? settings.cashProcessed : localProcessed);
+      })
+      .catch((error) => {
+        console.warn('Usando caixa local porque o perfil da loja nao carregou', error);
+      });
   };
 
   const calculateStats = () => {
@@ -96,8 +128,7 @@ export function CashRegister() {
         : order
     );
 
-    setOrders(next);
-    localStorage.setItem('cashOrders', JSON.stringify(next));
+    saveRegisterState(next);
     cancelEdit();
   };
 
@@ -124,35 +155,27 @@ export function CashRegister() {
     if (existing || processed.includes(orderNumber) || orderData.isReprint) {
       newOrder.isReprint = true;
       const next = [...orders, newOrder];
-      setOrders(next);
-      localStorage.setItem('cashOrders', JSON.stringify(next));
+      saveRegisterState(next);
       return;
     }
 
     const nextOrders = [...orders, newOrder];
     const nextProcessed = [...processed, orderNumber];
 
-    setOrders(nextOrders);
-    setProcessed(nextProcessed);
-    localStorage.setItem('cashOrders', JSON.stringify(nextOrders));
-    localStorage.setItem('cashProcessed', JSON.stringify(nextProcessed));
+    saveRegisterState(nextOrders, nextProcessed);
   };
 
   const deleteOrder = (id) => {
     const next = orders.filter((order) => order.id !== id);
-    setOrders(next);
-    localStorage.setItem('cashOrders', JSON.stringify(next));
+    saveRegisterState(next);
   };
 
-  const clearAll = () => {
-    if (!window.confirm('Tem certeza? Isso vai limpar todo o registro do caixa.')) {
+  const clearAll = async () => {
+    if (!(await confirmAction('Tem certeza? Isso vai limpar todo o registro do caixa.'))) {
       return;
     }
 
-    setOrders([]);
-    setProcessed([]);
-    localStorage.removeItem('cashOrders');
-    localStorage.removeItem('cashProcessed');
+    saveRegisterState([], []);
   };
 
   const paymentLabel = (method) => {

@@ -1,0 +1,19 @@
+.body {
+  position: relative;
+  height: 100%;
+  background: linear-gradient(180deg, #fbfbfd, var(--color-dark-white));
+  color: var(--color-black);
+}
+
+.main-content {
+  position: fixed;
+  top: var(--header-height);
+  bottom: var(--footer-height);
+  left: var(--hub-sidebar-offset, 0);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  overflow: hidden;
+}

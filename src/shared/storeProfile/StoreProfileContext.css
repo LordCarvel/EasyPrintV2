@@ -1,0 +1,146 @@
+.store-profile-login,
+.store-profile-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: #f3f4f6;
+  color: #171717;
+}
+
+.store-profile-card {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(17, 24, 39, 0.12);
+}
+
+.store-profile-header h1,
+.store-profile-card h2 {
+  margin: 0;
+  color: #1f4f7d;
+}
+
+.store-profile-header h1 {
+  font-size: 1.35rem;
+}
+
+.store-profile-card h2 {
+  margin-top: 12px;
+  font-size: 1.05rem;
+}
+
+.store-profile-header p,
+.store-profile-note {
+  margin: 6px 0 0;
+  color: #666;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.store-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.store-profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  color: #333;
+  font-weight: 700;
+}
+
+.store-profile-field input {
+  width: 100%;
+  border: 1px solid #d8d8d8;
+  border-radius: 6px;
+  padding: 10px;
+  font: inherit;
+}
+
+.store-profile-field input:focus {
+  outline: none;
+  border-color: #6f9ad8;
+  box-shadow: 0 0 0 2px rgba(111, 154, 216, 0.15);
+}
+
+.store-profile-primary {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 12px;
+  border: 1px solid #285180;
+  border-radius: 6px;
+  background: #285180;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.store-profile-store-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.store-profile-store-list article {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.store-profile-store-list strong,
+.store-profile-store-list span,
+.store-profile-store-list small {
+  display: block;
+}
+
+.store-profile-store-list span,
+.store-profile-store-list small {
+  margin-top: 4px;
+  color: #666;
+  line-height: 1.35;
+}
+
+.store-profile-divider {
+  height: 1px;
+  margin: 16px 0;
+  background: #e5e7eb;
+}
+
+.store-profile-error,
+.store-profile-floating-error {
+  margin-top: 10px;
+  border: 1px solid #ffd4d4;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #b92323;
+  padding: 10px 12px;
+  font-weight: 700;
+}
+
+.store-profile-floating-error {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 5000;
+  margin-top: 0;
+}
+
+@media (max-width: 720px) {
+  .store-profile-grid,
+  .store-profile-store-list {
+    grid-template-columns: 1fr;
+  }
+}

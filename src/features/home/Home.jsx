@@ -1,10 +1,9 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { Printer } from '../../shared/utils/Printer';
 import { buildHighlighter, escapeHtml } from '../../shared/utils/highlight';
-import {
-  flushDeliveryHubPendingEvents,
-  publishIncomingOrderRegistered
-} from '../../shared/integration/deliveryHub';
+import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
+import { showAppAlert } from '../../shared/ui/appDialog';
+import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
 import './Home.css';
 const DEFAULT_CATALOG = [
   { name: 'Carne', price: 4.49 },
@@ -475,12 +474,6 @@ export function Home() {
 
   const render = (value) => highlightText(value ?? '');
 
-  const retryPendingHubEvents = () => {
-    void flushDeliveryHubPendingEvents().catch((error) => {
-      console.error('Falha ao reenviar eventos pendentes do Delivery Hub', error);
-    });
-  };
-
   const parseOrderText = (raw) => {
     const lines = raw
       .split(/\r?\n/)
@@ -936,15 +929,7 @@ export function Home() {
       })
       : null;
 
-    void publishIncomingOrderRegistered({
-      parsed,
-      amount,
-      isReprint: Boolean(cashPersistResult?.alreadyProcessed)
-    }).catch((error) => {
-      console.error('Falha ao publicar pedido no Delivery Hub', error);
-    });
-
-    window.setTimeout(retryPendingHubEvents, 1500);
+    return cashPersistResult;
   };
 
   const persistCashOrder = ({ orderNumber, customerName, totalValue, paymentMethod }) => {
@@ -968,6 +953,12 @@ export function Home() {
 
     localStorage.setItem('cashOrders', JSON.stringify(updatedOrders));
     localStorage.setItem('cashProcessed', JSON.stringify(updatedProcessed));
+    void saveStoreSettingsPatch({
+      cashOrders: updatedOrders,
+      cashProcessed: updatedProcessed
+    }).catch((error) => {
+      console.error('Falha ao salvar caixa no perfil da loja', error);
+    });
     window.dispatchEvent(
       new CustomEvent('registerOrder', {
         detail: newEntry
@@ -986,11 +977,24 @@ export function Home() {
       if (clip) {
         setText(clip);
         printText(clip);
+        return;
       }
     } catch (err) {
       console.error('Não foi possível colar automaticamente', err);
-      alert('Não foi possível acessar sua área de transferência. Cole manualmente (Ctrl+V).');
     }
+
+    try {
+      const desktopClipboard = window.easyHubDesktop?.readClipboard?.();
+      if (desktopClipboard) {
+        setText(desktopClipboard);
+        printText(desktopClipboard);
+        return;
+      }
+    } catch (err) {
+      console.error('Não foi possível acessar a ponte desktop da área de transferência', err);
+    }
+
+    void showAppAlert('Não foi possível acessar sua área de transferência. Cole manualmente (Ctrl+V).');
   };
 
   useEffect(() => {
@@ -1028,6 +1032,29 @@ export function Home() {
       setTemplate(DEFAULT_PRINT_TEMPLATE);
       setEnableHighlight(DEFAULT_PRINT_TEMPLATE.highlightKeywords);
     }
+
+    void hydrateLocalSettingsFromStore()
+      .then((settings) => {
+        if (Array.isArray(settings.keywords)) {
+          setKeywordsConfig(settings.keywords);
+        }
+
+        if (settings.printTemplate && typeof settings.printTemplate === 'object') {
+          setTemplate({ ...DEFAULT_PRINT_TEMPLATE, ...settings.printTemplate });
+          setEnableHighlight(
+            typeof settings.printTemplate.highlightKeywords === 'boolean'
+              ? settings.printTemplate.highlightKeywords
+              : DEFAULT_PRINT_TEMPLATE.highlightKeywords
+          );
+        }
+
+        if (Array.isArray(settings.catalogs)) {
+          setCatalogEntries(parseCatalogEntries(settings.catalogs));
+        }
+      })
+      .catch((error) => {
+        console.warn('Usando configuracoes locais porque o perfil da loja nao carregou', error);
+      });
   }, []);
 
   useEffect(() => {
@@ -1080,14 +1107,20 @@ export function Home() {
   }, []);
 
   useEffect(() => {
-    retryPendingHubEvents();
+    const pendingText = localStorage.getItem(PENDING_PRINT_TEXT_KEY);
+    if (!pendingText) return;
 
-    const handleOnline = () => {
-      retryPendingHubEvents();
-    };
+    const shouldAutoPrint = localStorage.getItem(PENDING_PRINT_AUTO_KEY) === '1';
+    setText(pendingText);
+    localStorage.removeItem(PENDING_PRINT_TEXT_KEY);
+    localStorage.removeItem(PENDING_PRINT_AUTO_KEY);
+    textareaRef.current?.focus();
 
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
+    if (shouldAutoPrint) {
+      window.setTimeout(() => {
+        printText(pendingText);
+      }, 0);
+    }
   }, []);
 
   return (

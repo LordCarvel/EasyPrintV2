@@ -46,6 +46,39 @@
       <path d="M20 6L9 17l-5-5" />
     </>
   ),
+  plus: (
+    <>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </>
+  ),
+  send: (
+    <>
+      <path d="M22 2L11 13" />
+      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </>
+  ),
+  print: (
+    <>
+      <path d="M6 9V3h12v6" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <path d="M6 14h12v7H6z" />
+    </>
+  ),
+  store: (
+    <>
+      <path d="M3 9l1-5h16l1 5" />
+      <path d="M4 9v11h16V9" />
+      <path d="M9 20v-6h6v6" />
+      <path d="M3 9h18" />
+    </>
+  ),
   report: (
     <>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />

@@ -1,5 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Icon } from '../../shared/ui/Icon';
+import { confirmAction } from '../../shared/ui/appDialog';
+import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
 import './ConfigKeywords.css';
 
 const DEFAULT_KEYWORDS = [
@@ -137,11 +139,28 @@ export function ConfigKeywords() {
         setCatalogs(DEFAULT_CATALOGS);
       }
     }
+
+    void hydrateLocalSettingsFromStore()
+      .then((settings) => {
+        if (Array.isArray(settings.keywords)) {
+          setKeywords(mergeKeywordDefaults(settings.keywords.length ? settings.keywords : DEFAULT_KEYWORDS));
+        }
+        if (Array.isArray(settings.catalogs)) {
+          const withDefaults = ensureCatalogDefaults(settings.catalogs.length ? settings.catalogs : DEFAULT_CATALOGS);
+          setCatalogs(withDefaults);
+        }
+      })
+      .catch((error) => {
+        console.warn('Usando catalogo local porque o perfil da loja nao carregou', error);
+      });
   }, []);
 
   const saveKeywords = (next) => {
     setKeywords(next);
     localStorage.setItem('keywords', JSON.stringify(next));
+    void saveStoreSettingsPatch({ keywords: next }).catch((error) => {
+      console.error('Falha ao salvar palavras no perfil da loja', error);
+    });
   };
 
   const addKeyword = () => {
@@ -180,8 +199,8 @@ export function ConfigKeywords() {
     updateKeyword(id, 'words', words);
   };
 
-  const resetToDefault = () => {
-    if (window.confirm('Tem certeza que deseja voltar ao padrao de fabrica?')) {
+  const resetToDefault = async () => {
+    if (await confirmAction('Tem certeza que deseja voltar ao padrao de fabrica?')) {
       saveKeywords(DEFAULT_KEYWORDS);
     }
   };
@@ -189,10 +208,13 @@ export function ConfigKeywords() {
   const saveCatalogs = (next) => {
     setCatalogs(next);
     localStorage.setItem('catalogs', JSON.stringify(next));
+    void saveStoreSettingsPatch({ catalogs: next }).catch((error) => {
+      console.error('Falha ao salvar catalogos no perfil da loja', error);
+    });
   };
 
-  const resetCatalogs = () => {
-    if (window.confirm('Voltar para os 3 catalogos padrao (Esfihas, Pizzas e Combos e Refrigerantes)?')) {
+  const resetCatalogs = async () => {
+    if (await confirmAction('Voltar para os 3 catalogos padrao (Esfihas, Pizzas e Combos e Refrigerantes)?')) {
       saveCatalogs(DEFAULT_CATALOGS);
       setNewCatalogName('Novo catalogo');
     }

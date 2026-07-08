@@ -1,0 +1,101 @@
+.leva {
+  border-top: 2px solid var(--color-light-gray-model-two);
+  padding-top: var(--space-sm);
+  margin: var(--space-sm) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.levaHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.levaTitle {
+  font-family: var(--font-poppins);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.viagemId {
+  color: var(--color-blue);
+  font-family: var(--font-ibm-plex-mono);
+  font-size: 0.85rem;
+}
+
+.statusBadge {
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: capitalize;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.statusBadge[data-status="aberta"] {
+  background: #e9f7ff;
+  color: #0f6abf;
+}
+
+.statusBadge[data-status="fechada"] {
+  background: #f1f1f1;
+  color: #555;
+}
+
+.levaMeta {
+  display: flex;
+  gap: var(--space-sm);
+  color: var(--muted-text);
+  font-size: 0.85rem;
+}
+
+.levaActions {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.addEntregaRow {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.addEntregaRow input {
+  flex: 1;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-gray);
+  border-radius: var(--btn-radius);
+  font-family: var(--font-roboto);
+  font-size: var(--input-font-size);
+}
+
+.addEntregaRow input:focus {
+  outline: none;
+  border-color: var(--color-blue);
+}
+
+.levaBody {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--space-xs);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.25rem 0;
+}
+
+@media (max-width: 768px) {
+  .levaHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .addEntregaRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { Printer } from '../../shared/utils/Printer';
 import { buildHighlighter, escapeHtml } from '../../shared/utils/highlight';
+import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
 import './ConfigTemplate.css';
 
 const DEFAULT_TEMPLATE = {
@@ -94,6 +95,19 @@ export function ConfigTemplate() {
         setKeywordsConfig([]);
       }
     }
+
+    void hydrateLocalSettingsFromStore()
+      .then((settings) => {
+        if (settings.printTemplate && typeof settings.printTemplate === 'object') {
+          setTemplate({ ...DEFAULT_TEMPLATE, ...settings.printTemplate });
+        }
+        if (Array.isArray(settings.keywords)) {
+          setKeywordsConfig(settings.keywords);
+        }
+      })
+      .catch((error) => {
+        console.warn('Usando comanda local porque o perfil da loja nao carregou', error);
+      });
   }, []);
 
   useEffect(() => {
@@ -103,6 +117,9 @@ export function ConfigTemplate() {
   const saveTemplate = (newTemplate) => {
     setTemplate(newTemplate);
     localStorage.setItem('template', JSON.stringify(newTemplate));
+    void saveStoreSettingsPatch({ printTemplate: newTemplate }).catch((error) => {
+      console.error('Falha ao salvar comanda no perfil da loja', error);
+    });
   };
 
   const toggleOption = (key) => {

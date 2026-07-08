@@ -1,0 +1,68 @@
+.controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--surface-gradient);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  border-radius: calc(var(--card-radius) + 2px);
+  box-shadow: var(--card-shadow);
+}
+
+.buttonGroup {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.buttonGroup :global(.primary-btn),
+.buttonGroup :global(.secondary-btn),
+.buttonGroup :global(.add-leva-btn) {
+  padding: calc(var(--space-xxs) + 0.2rem) var(--space-md);
+  border-radius: calc(var(--btn-radius) - 2px);
+  font-size: var(--btn-font-size);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+
+.searchWrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: rgba(255,255,255,0.6);
+  padding: var(--space-xs);
+  border-radius: calc(var(--btn-radius) - 1px);
+}
+
+.searchWrap .search-input {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.5rem;
+  width: 220px;
+}
+
+.controls :global(.search-input) {
+  border-radius: calc(var(--btn-radius) - 2px);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.workspaceGroup {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .controls {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .buttonGroup,
+  .workspaceGroup {
+    width: 100%;
+    flex-direction: column;
+  }
+}

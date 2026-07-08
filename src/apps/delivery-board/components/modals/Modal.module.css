@@ -1,0 +1,67 @@
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.modal {
+  background: var(--surface-gradient);
+  border-radius: var(--card-radius);
+  width: 92%;
+  max-width: 450px;
+  padding: var(--space-md);
+  box-shadow: 0 10px 30px rgba(2,6,23,0.08);
+  animation: fadeIn 0.18s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal h2 {
+  font-family: var(--font-montserrat);
+  margin-bottom: var(--space-sm);
+  text-align: center;
+  font-size: 1.05rem;
+}
+
+.modal form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.modal input,
+.modal textarea,
+.modal select {
+  padding: var(--space-sm);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: calc(var(--btn-radius) - 2px);
+  font-family: var(--font-roboto);
+  outline: none;
+  font-size: var(--input-font-size);
+}
+
+.modal input:focus,
+.modal textarea:focus,
+.modal select:focus {
+  border-color: var(--color-blue);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}

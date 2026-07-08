@@ -36,6 +36,10 @@ html, body, #root {
   width: 100%;
 }
 
+html {
+  font-size: 80%;
+}
+
 body {
   overflow: hidden;
   font-family: var(--font-inter);
