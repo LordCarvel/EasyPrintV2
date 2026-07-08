@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: easyprint-routing-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.17.1
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: https://lordcarvel.github.io
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

@@ -27,6 +27,10 @@ npm run dev
 npm run build
 ```
 
+## Deploy
+
+O deploy em GitHub Pages + Render + Supabase esta documentado em [DEPLOY.md](DEPLOY.md).
+
 ## Estrutura
 
 ```
