@@ -33,16 +33,12 @@ export function Header() {
       </div>
 
       <nav className="header-right">
-        <Link to="/" className={`header-link ${isActive('/') ? 'active' : ''}`}>
-          Impressao
+        <Link to="/roteamento" className={`header-link ${isActive('/roteamento') || isActive('/') ? 'active' : ''}`}>
+          Pedidos
         </Link>
 
         <Link to="/caixa" className={`header-link ${isActive('/caixa') ? 'active' : ''}`}>
           Caixa
-        </Link>
-
-        <Link to="/roteamento" className={`header-link ${isActive('/roteamento') ? 'active' : ''}`}>
-          Roteamento
         </Link>
 
         <Link to="/catalogo" className={`header-link ${isActive('/catalogo') ? 'active' : ''}`}>

@@ -83,10 +83,15 @@
   align-items: start;
 }
 
-.routing-login-grid,
-.routing-send-actions {
+.routing-login-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.routing-send-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
 }
 
@@ -426,6 +431,12 @@
   color: #176c3a;
 }
 
+.routing-feedback.warning {
+  border-color: #efd28a;
+  background: #fff8df;
+  color: #725000;
+}
+
 .routing-divider {
   height: 1px;
   margin: 18px 0;
@@ -463,6 +474,28 @@
 .routing-status-visto {
   background: #fff7dd;
   color: #8a5b00;
+}
+
+.routing-status-reenviado {
+  background: #fff8df;
+  color: #8a5b00;
+}
+
+.routing-order-card.resent {
+  border-color: #efd28a;
+  background: #fffdf5;
+}
+
+.routing-resend-warning {
+  margin-top: 9px;
+  padding: 9px 10px;
+  border: 1px solid #efd28a;
+  border-radius: 8px;
+  background: #fff8df;
+  color: #725000;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .routing-print-shell {
@@ -622,6 +655,11 @@
 .sent-cash-table tr.is-canceled {
   opacity: 0.58;
   text-decoration: line-through;
+}
+
+.sent-cash-table tr.is-duplicate:not(.is-canceled) {
+  background: #fff8df;
+  color: #725000;
 }
 
 .sent-cash-table tr.missing-value:not(.is-canceled) {

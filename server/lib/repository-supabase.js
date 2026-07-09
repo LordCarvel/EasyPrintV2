@@ -3,6 +3,8 @@ import { ORDER_STATUS } from './routing-core.js';
 import { INITIAL_STORES } from './seed-data.js';
 import { createPasswordHash, createSessionToken, normalizeUsername, verifyPassword } from './auth.js';
 
+const RESEND_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export const nowIso = () => new Date().toISOString();
 
 export const createId = (prefix = 'id') =>
@@ -117,8 +119,34 @@ const rowToOrder = (row) => row && ({
   printedAt: row.printed_at || '',
   canceledAt: row.canceled_at || '',
   sourceStoreName: row.source_store?.name || row.source_store_name || '',
-  targetStoreName: row.target_store?.name || row.target_store_name || ''
+  targetStoreName: row.target_store?.name || row.target_store_name || '',
+  isResend: row.status === ORDER_STATUS.RESENT
 });
+
+const getOrderNumberForDedupe = (input = {}) =>
+  String(input.parsedData?.orderNumber || input.parsedData?.locator || '').trim();
+
+const isWithinResendWindow = (value) => {
+  const timestamp = new Date(value || '').getTime();
+  return Number.isFinite(timestamp) && Date.now() - timestamp <= RESEND_WINDOW_MS;
+};
+
+const findRecentOrderForResend = async (db, input) => {
+  const orderNumber = getOrderNumberForDedupe(input);
+  if (!orderNumber) return null;
+
+  const rows = await readMany(
+    db.from('orders')
+      .select('id, created_at')
+      .eq('source_store_id', input.sourceStoreId)
+      .eq('target_store_id', input.targetStoreId)
+      .eq('order_number', orderNumber)
+      .order('created_at', { ascending: false })
+      .limit(5)
+  );
+
+  return rows.find((row) => isWithinResendWindow(row.created_at)) || null;
+};
 
 const EASY_PRINT_CASH_SOURCE = 'easy-print-cash';
 
@@ -503,11 +531,35 @@ export const canSendToStore = async (db, sourceStoreId, targetStoreId) => {
 
 export const createOrder = async (db, input) => {
   const now = nowIso();
+  const orderNumber = getOrderNumberForDedupe(input);
+  const existing = await findRecentOrderForResend(db, input);
+
+  if (existing) {
+    const { error } = await db.from('orders')
+      .update({
+        order_number: orderNumber,
+        customer_name: String(input.parsedData?.customerName || ''),
+        raw_text: input.rawText,
+        parsed_data: input.parsedData,
+        route_result: input.routeResult,
+        status: ORDER_STATUS.RESENT,
+        created_at: now,
+        viewed_at: null,
+        printed_at: null,
+        canceled_at: null
+      })
+      .eq('id', existing.id);
+    throwIfError(error);
+
+    await addOrderEvent(db, existing.id, ORDER_STATUS.RESENT, 'Atencao: este pedido foi enviado novamente para a fila.');
+    return { ...(await getOrder(db, existing.id)), isResend: true };
+  }
+
   const orderId = createId('order');
 
   const { error } = await db.from('orders').insert({
     id: orderId,
-    order_number: String(input.parsedData?.orderNumber || ''),
+    order_number: orderNumber,
     customer_name: String(input.parsedData?.customerName || ''),
     source_store_id: input.sourceStoreId,
     target_store_id: input.targetStoreId,
@@ -520,7 +572,7 @@ export const createOrder = async (db, input) => {
   throwIfError(error);
 
   await addOrderEvent(db, orderId, ORDER_STATUS.SENT, 'Pedido enviado para a fila da loja destino.');
-  return getOrder(db, orderId);
+  return { ...(await getOrder(db, orderId)), isResend: false };
 };
 
 export const getOrder = async (db, orderId) => {

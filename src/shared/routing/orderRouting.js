@@ -1,6 +1,7 @@
 export const ROUTING_STATE_KEY = 'easyPrintOrderRoutingState';
 export const PENDING_PRINT_TEXT_KEY = 'easyPrintPendingPrintText';
 export const PENDING_PRINT_AUTO_KEY = 'easyPrintPendingPrintAuto';
+export const PENDING_PRINT_RESEND_KEY = 'easyPrintPendingPrintResend';
 
 export const RULE_TYPES = {
   KEYWORD: 'keyword',

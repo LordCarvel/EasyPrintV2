@@ -1,22 +1,22 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { Printer } from '../../shared/utils/Printer';
 import { buildHighlighter, escapeHtml } from '../../shared/utils/highlight';
-import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
+import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_RESEND_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
 import { showAppAlert } from '../../shared/ui/appDialog';
 import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
 import './Home.css';
 const DEFAULT_CATALOG = [
   { name: 'Carne', price: 4.49 },
   { name: 'Frango', price: 5.49 },
-  { name: 'Frango com Catupiry Original', price: 6.99 },
+  { name: 'Frango com Catupiry Original', price: 5.99 },
   { name: 'Frango com Cheddar', price: 5.49 },
   { name: 'Frango com Requeijão', price: 5.49 },
   { name: 'Calabresa', price: 5.49 },
-  { name: 'Calabresa com Catupiry Original', price: 6.99 },
+  { name: 'Calabresa com Catupiry Original', price: 5.99 },
   { name: 'Calabresa com Cheddar', price: 5.49 },
   { name: 'Calabresa com Requeijão', price: 5.49 },
   { name: 'Bacon', price: 5.49 },
-  { name: 'Bacon com Catupiry Original', price: 6.99 },
+  { name: 'Bacon com Catupiry Original', price: 5.99 },
   { name: 'Bacon com Cheddar', price: 5.49 },
   { name: 'Bacon com Requeijão', price: 5.49 },
   { name: 'Brócolis com Bacon', price: 5.49 },
@@ -140,6 +140,8 @@ export function Home() {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
+      .replace(/\bc\/\b/g, 'com')
+      .replace(/\s+/g, ' ')
       .trim();
 
   const parseCatalogEntries = (rawCatalogs) => {
@@ -224,6 +226,19 @@ export function Home() {
     return pickBest(false);
   };
 
+  const getCatalogNameScore = (itemName = '', catalogName = '') => {
+    const normItem = normalizeText(itemName);
+    const normCatalog = normalizeText(catalogName);
+    if (!normItem || !normCatalog) return 0;
+    if (normItem === normCatalog) return 4;
+    if (normItem.includes(normCatalog) || normCatalog.includes(normItem)) return 3;
+
+    const itemTokens = new Set(normItem.split(/\s+/).filter((token) => token.length > 2));
+    const catalogTokens = normCatalog.split(/\s+/).filter((token) => token.length > 2);
+    const matched = catalogTokens.filter((token) => itemTokens.has(token)).length;
+    return matched ? Math.min(2, matched) : 0;
+  };
+
   const isPizzaOrComboName = (name = '') => {
     const norm = normalizeText(name);
     return norm.includes('pizza') || norm.includes('combo');
@@ -291,9 +306,12 @@ export function Home() {
       } else if (normItem.includes(entryNorm) || entryNorm.includes(normItem)) {
         score = 3;
       } else {
+        score = getCatalogNameScore(normItem, entryNorm);
         if (normItem.includes('combo') && entryNorm.includes('combo')) score += 2;
         if (normItem.includes('pizza') && entryNorm.includes('pizza')) score += 2;
       }
+
+      if (score <= 0) return;
 
       const candidate = {
         qty: String(rounded),
@@ -357,6 +375,11 @@ export function Home() {
       const closeEnough = rounded > 0 && Math.abs(raw - rounded) <= 0.2;
       if (closeEnough) return String(rounded);
     }
+
+    const source = catalogEntries.length ? catalogEntries : DEFAULT_CATALOG;
+    const inferredFromCatalog = inferQtyFromCandidateEntries(itemName, priceLine, source);
+    if (inferredFromCatalog?.qty) return inferredFromCatalog.qty;
+
     return '';
   };
 
@@ -900,7 +923,7 @@ export function Home() {
     return html;
   };
 
-  const printText = (value) => {
+  const printText = (value, options = {}) => {
     const content = (value ?? text).trim();
     if (!content) return;
     const parsed = parseOrderText(content);
@@ -920,6 +943,14 @@ export function Home() {
       amount = paymentValueNum || totalValueNum;
     }
 
+    if (options.skipCash) {
+      void showAppAlert(`Atencao: o pedido #${parsed.number || '-'} foi reenviado e nao sera lancado novamente no caixa.`);
+      return {
+        alreadyProcessed: true,
+        skippedCash: true
+      };
+    }
+
     const cashPersistResult = parsed.number
       ? persistCashOrder({
         orderNumber: parsed.number,
@@ -929,17 +960,25 @@ export function Home() {
       })
       : null;
 
+    if (cashPersistResult?.alreadyProcessed) {
+      void showAppAlert(`Atencao: o pedido #${parsed.number} ja estava no caixa e nao foi lancado novamente.`);
+    }
+
     return cashPersistResult;
   };
 
   const persistCashOrder = ({ orderNumber, customerName, totalValue, paymentMethod }) => {
     const storedOrders = JSON.parse(localStorage.getItem('cashOrders') || '[]');
     const storedProcessed = JSON.parse(localStorage.getItem('cashProcessed') || '[]');
-    const alreadyProcessed = storedProcessed.includes(orderNumber);
+    const normalizedOrderNumber = String(orderNumber || '').trim();
+    const existingEntry = storedOrders.find((order) =>
+      String(order?.orderNumber || order?.id || '').trim() === normalizedOrderNumber
+    );
+    const alreadyProcessed = storedProcessed.includes(normalizedOrderNumber) || Boolean(existingEntry);
 
     const newEntry = {
-      id: orderNumber,
-      orderNumber,
+      id: normalizedOrderNumber,
+      orderNumber: normalizedOrderNumber,
       customer: customerName,
       total: totalValue,
       paymentMethod,
@@ -948,8 +987,29 @@ export function Home() {
       isReprint: alreadyProcessed
     };
 
+    if (alreadyProcessed) {
+      const updatedProcessed = storedProcessed.includes(normalizedOrderNumber)
+        ? storedProcessed
+        : [...storedProcessed, normalizedOrderNumber];
+
+      if (updatedProcessed !== storedProcessed) {
+        localStorage.setItem('cashProcessed', JSON.stringify(updatedProcessed));
+        void saveStoreSettingsPatch({
+          cashOrders: storedOrders,
+          cashProcessed: updatedProcessed
+        }).catch((error) => {
+          console.error('Falha ao salvar caixa no perfil da loja', error);
+        });
+      }
+
+      return {
+        alreadyProcessed: true,
+        entry: existingEntry || newEntry
+      };
+    }
+
     const updatedOrders = [...storedOrders, newEntry];
-    const updatedProcessed = alreadyProcessed ? storedProcessed : [...storedProcessed, orderNumber];
+    const updatedProcessed = [...storedProcessed, normalizedOrderNumber];
 
     localStorage.setItem('cashOrders', JSON.stringify(updatedOrders));
     localStorage.setItem('cashProcessed', JSON.stringify(updatedProcessed));
@@ -1111,14 +1171,16 @@ export function Home() {
     if (!pendingText) return;
 
     const shouldAutoPrint = localStorage.getItem(PENDING_PRINT_AUTO_KEY) === '1';
+    const shouldSkipCash = localStorage.getItem(PENDING_PRINT_RESEND_KEY) === '1';
     setText(pendingText);
     localStorage.removeItem(PENDING_PRINT_TEXT_KEY);
     localStorage.removeItem(PENDING_PRINT_AUTO_KEY);
+    localStorage.removeItem(PENDING_PRINT_RESEND_KEY);
     textareaRef.current?.focus();
 
     if (shouldAutoPrint) {
       window.setTimeout(() => {
-        printText(pendingText);
+        printText(pendingText, { skipCash: shouldSkipCash });
       }, 0);
     }
   }, []);

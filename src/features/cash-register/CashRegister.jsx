@@ -2,11 +2,16 @@
 import { Icon } from '../../shared/ui/Icon';
 import { confirmAction } from '../../shared/ui/appDialog';
 import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
+import { routingApi } from '../routing/routingApi';
+import { formatCurrency, parseIfoodFinancial } from '../../../shared/routing/ifoodFinancial';
 import './CashRegister.css';
 
 export function CashRegister() {
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({ dinheiro: 0, cartao: 0, online: 0 });
+  const [sentOrders, setSentOrders] = useState([]);
+  const [sentStats, setSentStats] = useState({ total: 0, dinheiro: 0, cartao: 0, online: 0, count: 0 });
+  const [sentError, setSentError] = useState('');
   const [processed, setProcessed] = useState([]);
   const [secretMode, setSecretMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -15,11 +20,16 @@ export function CashRegister() {
 
   useEffect(() => {
     loadOrders();
+    void loadSentOrders();
   }, []);
 
   useEffect(() => {
     calculateStats();
   }, [orders]);
+
+  useEffect(() => {
+    calculateSentStats();
+  }, [sentOrders]);
 
   useEffect(() => {
     const handleNewOrder = (event) => {
@@ -72,13 +82,45 @@ export function CashRegister() {
       });
   };
 
+  const loadSentOrders = async () => {
+    try {
+      const payload = await routingApi.listSentOrders();
+      setSentOrders(Array.isArray(payload.orders) ? payload.orders : []);
+      setSentError('');
+    } catch (error) {
+      setSentOrders([]);
+      setSentError(error.message);
+    }
+  };
+
+  const getSentOrderFinancial = (order = {}) => {
+    const financial = order.parsedData?.financial || parseIfoodFinancial(order.rawText || order.parsedData?.rawText || '');
+    const deductionValue = Number(
+      financial?.deductionValue ??
+      financial?.totalValue ??
+      financial?.subtotalValue ??
+      0
+    ) || 0;
+
+    return {
+      ...financial,
+      deductionValue,
+      paymentMethod: financial?.paymentMethod || 'online',
+      hasFinancialData: Boolean(financial?.hasFinancialData || deductionValue > 0)
+    };
+  };
+
   const calculateStats = () => {
     let dinheiro = 0;
     let cartao = 0;
     let online = 0;
+    const seenOrders = new Set();
 
     orders.forEach((order) => {
+      const orderKey = String(order.orderNumber || order.id || '').trim();
       if (order.isReprint) return;
+      if (orderKey && seenOrders.has(orderKey)) return;
+      if (orderKey) seenOrders.add(orderKey);
 
       const valor = Number.parseFloat(order.total) || 0;
 
@@ -96,6 +138,34 @@ export function CashRegister() {
     });
 
     setStats({ dinheiro, cartao, online });
+  };
+
+  const calculateSentStats = () => {
+    const seenOrders = new Set();
+    const nextStats = { total: 0, dinheiro: 0, cartao: 0, online: 0, count: 0 };
+
+    sentOrders.forEach((order) => {
+      const orderKey = String(order.orderNumber || order.parsedData?.orderNumber || order.id || '').trim();
+      if (order.status === 'cancelado') return;
+      if (orderKey && seenOrders.has(orderKey)) return;
+      if (orderKey) seenOrders.add(orderKey);
+
+      const financial = getSentOrderFinancial(order);
+      if (!financial.hasFinancialData) return;
+
+      nextStats.total += financial.deductionValue;
+      nextStats.count += 1;
+
+      if (financial.paymentMethod === 'dinheiro') {
+        nextStats.dinheiro += financial.deductionValue;
+      } else if (financial.paymentMethod === 'cartao') {
+        nextStats.cartao += financial.deductionValue;
+      } else {
+        nextStats.online += financial.deductionValue;
+      }
+    });
+
+    setSentStats(nextStats);
   };
 
   const toggleSecret = () => {
@@ -133,7 +203,7 @@ export function CashRegister() {
   };
 
   const addOrder = (orderData) => {
-    const orderNumber = orderData.orderNumber || orderData.number;
+    const orderNumber = String(orderData.orderNumber || orderData.number || '').trim();
     if (!orderNumber) return;
 
     const paymentMethod = orderData.paymentMethod || 'online';
@@ -151,11 +221,12 @@ export function CashRegister() {
       isReprint: false
     };
 
-    const existing = orders.find((order) => order.orderNumber === newOrder.orderNumber);
+    const existing = orders.find((order) =>
+      String(order.orderNumber || order.id || '').trim() === newOrder.orderNumber
+    );
     if (existing || processed.includes(orderNumber) || orderData.isReprint) {
-      newOrder.isReprint = true;
-      const next = [...orders, newOrder];
-      saveRegisterState(next);
+      const nextProcessed = processed.includes(orderNumber) ? processed : [...processed, orderNumber];
+      saveRegisterState(orders, nextProcessed);
       return;
     }
 
@@ -184,14 +255,38 @@ export function CashRegister() {
     return 'Online';
   };
 
+  const incomingTotal = stats.dinheiro + stats.cartao + stats.online;
+  const balanceTotal = incomingTotal - sentStats.total;
+
   const exportReport = () => {
-    const report = `RELATORIO DE CAIXA\n${'='.repeat(50)}\n\nData: ${new Date().toLocaleDateString('pt-BR')}\nHora: ${new Date().toLocaleTimeString('pt-BR')}\n\n${'='.repeat(50)}\nRESUMO FINANCEIRO\n${'='.repeat(50)}\n\nDinheiro: R$ ${stats.dinheiro.toFixed(2)}\nCartao: R$ ${stats.cartao.toFixed(2)}\nOnline: R$ ${stats.online.toFixed(2)}\n\n${'='.repeat(50)}\nPEDIDOS REGISTRADOS\n${'='.repeat(50)}\n\n${orders
+    const exportedOrderKeys = new Set();
+    const exportedOrders = orders.filter((order) => {
+      const orderKey = String(order.orderNumber || order.id || '').trim();
+      if (order.isReprint) return false;
+      if (orderKey && exportedOrderKeys.has(orderKey)) return false;
+      if (orderKey) exportedOrderKeys.add(orderKey);
+      return true;
+    });
+    const exportedSentKeys = new Set();
+    const exportedSentOrders = sentOrders.filter((order) => {
+      const orderKey = String(order.orderNumber || order.parsedData?.orderNumber || order.id || '').trim();
+      if (order.status === 'cancelado') return false;
+      if (orderKey && exportedSentKeys.has(orderKey)) return false;
+      if (orderKey) exportedSentKeys.add(orderKey);
+      return true;
+    });
+    const report = `RELATORIO DE CAIXA\n${'='.repeat(50)}\n\nData: ${new Date().toLocaleDateString('pt-BR')}\nHora: ${new Date().toLocaleTimeString('pt-BR')}\n\n${'='.repeat(50)}\nRESUMO FINANCEIRO\n${'='.repeat(50)}\n\nEntrou no caixa: ${formatCurrency(incomingTotal)}\nSaiu iFood: ${formatCurrency(sentStats.total)}\nSaldo: ${formatCurrency(balanceTotal)}\n\nEntradas por metodo\nDinheiro: ${formatCurrency(stats.dinheiro)}\nCartao: ${formatCurrency(stats.cartao)}\nOnline: ${formatCurrency(stats.online)}\n\nSaidas iFood por metodo\nDinheiro: ${formatCurrency(sentStats.dinheiro)}\nCartao: ${formatCurrency(sentStats.cartao)}\nOnline: ${formatCurrency(sentStats.online)}\n\n${'='.repeat(50)}\nPEDIDOS DE ENTRADA\n${'='.repeat(50)}\n\n${exportedOrders
       .map(
         (order) =>
           `Pedido #${order.orderNumber} | ${order.customer} | R$ ${order.total.toFixed(2)} | ${paymentLabel(order.paymentMethod)} | ${order.timestamp}${
             order.isReprint ? ' (REIMPRESSAO)' : ''
           }`
       )
+      .join('\n')}\n\n${'='.repeat(50)}\nPEDIDOS ENVIADOS / SAIDAS\n${'='.repeat(50)}\n\n${exportedSentOrders
+      .map((order) => {
+        const financial = getSentOrderFinancial(order);
+        return `Pedido #${order.orderNumber || order.parsedData?.orderNumber || '-'} | ${order.customerName || order.parsedData?.customerName || '-'} | ${order.targetStoreName || '-'} | ${paymentLabel(financial.paymentMethod)} | ${formatCurrency(financial.deductionValue)}`;
+      })
       .join('\n')}\n\n${'='.repeat(50)}`;
 
     const blob = new Blob([report], { type: 'text/plain' });
@@ -216,19 +311,41 @@ export function CashRegister() {
       </div>
 
       <div className="stats-container">
+        <div className="stat-box total">
+          <label>Entrou no caixa</label>
+          <span className="stat-value">{formatCurrency(incomingTotal)}</span>
+        </div>
+
+        <div className="stat-box outgoing">
+          <label>Saiu iFood</label>
+          <span className="stat-value">{formatCurrency(sentStats.total)}</span>
+        </div>
+
+        <div className={`stat-box ${balanceTotal < 0 ? 'negative' : 'balance'}`}>
+          <label>Saldo</label>
+          <span className="stat-value">{formatCurrency(balanceTotal)}</span>
+        </div>
+      </div>
+
+      <div className="stats-container payment-breakdown">
         <div className="stat-box">
-          <label>Dinheiro</label>
-          <span className="stat-value">R$ {stats.dinheiro.toFixed(2)}</span>
+          <label>Entrou dinheiro</label>
+          <span className="stat-value">{formatCurrency(stats.dinheiro)}</span>
         </div>
 
         <div className="stat-box">
-          <label>Cartao</label>
-          <span className="stat-value">R$ {stats.cartao.toFixed(2)}</span>
+          <label>Entrou cartao</label>
+          <span className="stat-value">{formatCurrency(stats.cartao)}</span>
         </div>
 
         <div className="stat-box">
-          <label>Online</label>
-          <span className="stat-value">R$ {stats.online.toFixed(2)}</span>
+          <label>Entrou online</label>
+          <span className="stat-value">{formatCurrency(stats.online)}</span>
+        </div>
+
+        <div className="stat-box">
+          <label>Enviados calculados</label>
+          <span className="stat-value">{sentStats.count}</span>
         </div>
       </div>
 
@@ -243,6 +360,77 @@ export function CashRegister() {
           <span>Limpar Caixa</span>
         </button>
       </div>
+
+      <section className="cash-flow-panel">
+        <div className="cash-flow-header">
+          <div>
+            <h3>Saidas dos enviados</h3>
+            <p>Pedidos enviados por esta loja entram como desconto/saida da conta iFood.</p>
+          </div>
+          <button type="button" className="btn-refresh-sent" onClick={loadSentOrders}>
+            Atualizar
+          </button>
+        </div>
+
+        {sentError ? <div className="cash-flow-warning">{sentError}</div> : null}
+
+        <div className="sent-flow-grid">
+          <div>
+            <span>Online</span>
+            <strong>{formatCurrency(sentStats.online)}</strong>
+          </div>
+          <div>
+            <span>Cartao</span>
+            <strong>{formatCurrency(sentStats.cartao)}</strong>
+          </div>
+          <div>
+            <span>Dinheiro</span>
+            <strong>{formatCurrency(sentStats.dinheiro)}</strong>
+          </div>
+        </div>
+
+        <div className="orders-table-container sent-orders-table">
+          <table className="orders-table">
+            <thead>
+              <tr>
+                <th>Pedido</th>
+                <th>Cliente</th>
+                <th>Destino</th>
+                <th>Pagamento</th>
+                <th>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sentOrders.length === 0 && (
+                <tr>
+                  <td className="empty-message" colSpan="5">
+                    Nenhuma saida de pedido enviado ainda.
+                  </td>
+                </tr>
+              )}
+
+              {sentOrders.map((order) => {
+                const financial = getSentOrderFinancial(order);
+                return (
+                  <tr key={order.id} className={order.status === 'cancelado' ? 'canceled-row' : ''}>
+                    <td className="order-number">#{order.orderNumber || order.parsedData?.orderNumber || '-'}</td>
+                    <td>{order.customerName || order.parsedData?.customerName || '-'}</td>
+                    <td>{order.targetStoreName || '-'}</td>
+                    <td>
+                      <span className={`badge badge-${financial.paymentMethod || 'online'}`}>
+                        {paymentLabel(financial.paymentMethod)}
+                      </span>
+                    </td>
+                    <td className="amount">
+                      {financial.hasFinancialData ? formatCurrency(financial.deductionValue) : 'Conferir'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {secretMode && (
         <div className="secret-panel">

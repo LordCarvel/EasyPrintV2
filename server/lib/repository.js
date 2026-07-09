@@ -3,6 +3,8 @@ import { createId, decodeJson, encodeJson, nowIso } from './database.js';
 import { INITIAL_STORES } from './seed-data.js';
 import { createPasswordHash, createSessionToken, normalizeUsername, verifyPassword } from './auth.js';
 
+const RESEND_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 const rowToStore = (row) => row && ({
   id: row.id,
   name: row.name,
@@ -40,8 +42,34 @@ const rowToOrder = (row) => row && ({
   printedAt: row.printed_at || '',
   canceledAt: row.canceled_at || '',
   sourceStoreName: row.source_store_name || '',
-  targetStoreName: row.target_store_name || ''
+  targetStoreName: row.target_store_name || '',
+  isResend: row.status === ORDER_STATUS.RESENT
 });
+
+const getOrderNumberForDedupe = (input = {}) =>
+  String(input.parsedData?.orderNumber || input.parsedData?.locator || '').trim();
+
+const isWithinResendWindow = (value) => {
+  const timestamp = new Date(value || '').getTime();
+  return Number.isFinite(timestamp) && Date.now() - timestamp <= RESEND_WINDOW_MS;
+};
+
+const findRecentOrderForResend = (db, input) => {
+  const orderNumber = getOrderNumberForDedupe(input);
+  if (!orderNumber) return null;
+
+  return db.prepare(`
+    SELECT id, created_at
+    FROM orders
+    WHERE source_store_id = ?
+      AND target_store_id = ?
+      AND order_number = ?
+    ORDER BY created_at DESC
+    LIMIT 5
+  `)
+    .all(input.sourceStoreId, input.targetStoreId, orderNumber)
+    .find((row) => isWithinResendWindow(row.created_at)) || null;
+};
 
 const EASY_PRINT_CASH_SOURCE = 'easy-print-cash';
 
@@ -387,7 +415,39 @@ export const canSendToStore = (db, sourceStoreId, targetStoreId) => {
 
 export const createOrder = (db, input) => {
   const now = nowIso();
+  const existing = findRecentOrderForResend(db, input);
+
+  if (existing) {
+    db.prepare(`
+      UPDATE orders
+      SET order_number = ?,
+          customer_name = ?,
+          raw_text = ?,
+          parsed_data = ?,
+          route_result = ?,
+          status = ?,
+          created_at = ?,
+          viewed_at = NULL,
+          printed_at = NULL,
+          canceled_at = NULL
+      WHERE id = ?
+    `).run(
+      getOrderNumberForDedupe(input),
+      String(input.parsedData?.customerName || ''),
+      input.rawText,
+      encodeJson(input.parsedData),
+      encodeJson(input.routeResult),
+      ORDER_STATUS.RESENT,
+      now,
+      existing.id
+    );
+
+    addOrderEvent(db, existing.id, ORDER_STATUS.RESENT, 'Atencao: este pedido foi enviado novamente para a fila.');
+    return { ...getOrder(db, existing.id), isResend: true };
+  }
+
   const orderId = createId('order');
+  const orderNumber = getOrderNumberForDedupe(input);
 
   db.prepare(`
     INSERT INTO orders (
@@ -396,7 +456,7 @@ export const createOrder = (db, input) => {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     orderId,
-    String(input.parsedData?.orderNumber || ''),
+    orderNumber,
     String(input.parsedData?.customerName || ''),
     input.sourceStoreId,
     input.targetStoreId,
@@ -408,7 +468,7 @@ export const createOrder = (db, input) => {
   );
 
   addOrderEvent(db, orderId, ORDER_STATUS.SENT, 'Pedido enviado para a fila da loja destino.');
-  return getOrder(db, orderId);
+  return { ...getOrder(db, orderId), isResend: false };
 };
 
 export const getOrder = (db, orderId) =>

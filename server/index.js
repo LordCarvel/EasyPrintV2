@@ -306,7 +306,13 @@ const handleCreateOrder = async (request, response) => {
     targetStoreId
   });
 
-  sendJson(response, 201, { order });
+  sendJson(response, order.isResend ? 200 : 201, {
+    order,
+    duplicate: Boolean(order.isResend),
+    message: order.isResend
+      ? 'Atencao: este pedido esta sendo enviado novamente. Ele nao sera lancado outra vez no caixa.'
+      : 'Pedido enviado para a fila.'
+  });
   return true;
 };
 

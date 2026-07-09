@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../../shared/ui/Icon';
 import { confirmAction, showAppAlert } from '../../shared/ui/appDialog';
+import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_RESEND_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
 import { clearCurrentStoreId, getCurrentStoreId, getSessionToken, routingApi, setAuthSession } from './routingApi';
 import { formatCurrency, parseIfoodFinancial } from '../../../shared/routing/ifoodFinancial';
 import './OrderRouting.css';
@@ -54,6 +55,13 @@ const paymentLabels = {
   online: 'Online'
 };
 
+const RESEND_STATUS = 'reenviado';
+
+const isResentOrder = (order = {}) => Boolean(order.isResend || order.status === RESEND_STATUS);
+
+const getOrderCashKey = (order = {}) =>
+  String(order.orderNumber || order.parsedData?.orderNumber || order.parsedData?.locator || '').trim();
+
 const getSentOrderFinancial = (order = {}) => {
   const parsedFinancial = order.parsedData?.financial;
   const fallbackFinancial = parsedFinancial || parseIfoodFinancial(order.rawText || order.parsedData?.rawText || '');
@@ -73,22 +81,30 @@ const getSentOrderFinancial = (order = {}) => {
   };
 };
 
-const buildSentCashRows = (orders = []) =>
-  orders.map((order) => {
+const buildSentCashRows = (orders = []) => {
+  const seenCashKeys = new Set();
+
+  return orders.map((order) => {
     const financial = getSentOrderFinancial(order);
     const canceled = order.status === 'cancelado';
+    const cashKey = getOrderCashKey(order);
+    const duplicateCashEntry = Boolean(cashKey && seenCashKeys.has(cashKey));
+    if (cashKey) seenCashKeys.add(cashKey);
 
     return {
       id: order.id,
       order,
       financial,
       canceled,
+      duplicateCashEntry,
+      isResend: isResentOrder(order),
       customerName: order.customerName || order.parsedData?.customerName || 'Cliente nao identificado',
       orderNumber: order.orderNumber || order.parsedData?.orderNumber || order.parsedData?.locator || 'Pedido',
       targetStoreName: order.targetStoreName || 'Loja destino',
       createdAt: order.createdAt
     };
   });
+};
 
 const buildSentCashStats = (rows = []) => {
   const base = {
@@ -98,10 +114,16 @@ const buildSentCashStats = (rows = []) => {
     cartao: 0,
     activeCount: 0,
     missingCount: 0,
-    canceledCount: 0
+    canceledCount: 0,
+    duplicateCount: 0
   };
 
   return rows.reduce((stats, row) => {
+    if (row.duplicateCashEntry) {
+      stats.duplicateCount += 1;
+      return stats;
+    }
+
     if (row.canceled) {
       stats.canceledCount += 1;
       return stats;
@@ -334,6 +356,7 @@ export function OrderRouting() {
   const [receivedOrders, setReceivedOrders] = useState([]);
   const [sentOrders, setSentOrders] = useState([]);
   const [feedback, setFeedback] = useState('');
+  const [feedbackType, setFeedbackType] = useState('success');
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState('');
 
@@ -402,6 +425,11 @@ export function OrderRouting() {
     setStoreIdState(storeId);
   };
 
+  const showFeedback = (message, type = 'success') => {
+    setFeedback(message);
+    setFeedbackType(type);
+  };
+
   const resetStore = async () => {
     const confirmed = await confirmAction(
       'Isso vai desconfigurar a loja atual neste computador. Use apenas se instalou na loja errada.',
@@ -455,6 +483,7 @@ export function OrderRouting() {
 
     setLoading(true);
     setFeedback('');
+    setFeedbackType('success');
     setRouteConfirmed(false);
     try {
       const payload = await routingApi.parseRoute(rawText);
@@ -466,6 +495,19 @@ export function OrderRouting() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const printCurrentOrder = () => {
+    const rawText = orderText.trim();
+    if (!rawText) {
+      void showAppAlert('Cole um pedido antes de imprimir.');
+      return;
+    }
+
+    localStorage.setItem(PENDING_PRINT_TEXT_KEY, rawText);
+    localStorage.setItem(PENDING_PRINT_AUTO_KEY, '1');
+    localStorage.removeItem(PENDING_PRINT_RESEND_KEY);
+    navigate('/impressao-manual');
   };
 
   const sendOrder = async (confirmedByModal = false) => {
@@ -483,12 +525,19 @@ export function OrderRouting() {
 
     setLoading(true);
     try {
-      await routingApi.createOrder({
+      const payload = await routingApi.createOrder({
         rawText: orderText,
         targetStoreId,
         routeConfirmed: reviewConfirmed
       });
-      setFeedback('Pedido enviado para a fila.');
+      if (payload.duplicate || payload.order?.isResend) {
+        showFeedback(
+          payload.message || 'Atencao: este pedido esta sendo enviado novamente. Ele nao sera lancado outra vez no caixa.',
+          'warning'
+        );
+      } else {
+        showFeedback(payload.message || 'Pedido enviado para a fila.');
+      }
       setOrderText('');
       setRoutePreview(null);
       setTargetStoreId('');
@@ -537,7 +586,7 @@ export function OrderRouting() {
 
     try {
       await routingApi.saveMyStore(profileForm);
-      setFeedback('Perfil da loja salvo.');
+      showFeedback('Perfil da loja salvo.');
       await loadMe();
     } catch (err) {
       void showAppAlert(err.message);
@@ -573,7 +622,7 @@ export function OrderRouting() {
   };
 
   const exportSentCashReport = () => {
-    const rows = sentCashRows.filter((row) => !row.canceled);
+    const rows = sentCashRows.filter((row) => !row.canceled && !row.duplicateCashEntry);
     const report = [
       'RELATORIO DE DESCONTO IFOOD',
       '='.repeat(50),
@@ -643,6 +692,11 @@ export function OrderRouting() {
       />
 
       <div className="routing-send-actions">
+        <button type="button" className="routing-secondary-action" onClick={printCurrentOrder} disabled={loading}>
+          <Icon name="print" size={16} />
+          Imprimir neste caixa
+        </button>
+
         <button type="button" className="routing-secondary-action" onClick={() => detectRoute()} disabled={loading}>
           Detectar destino
         </button>
@@ -823,6 +877,12 @@ export function OrderRouting() {
         </div>
       </div>
 
+      {sentCashStats.duplicateCount ? (
+        <div className="sent-cash-warning">
+          {sentCashStats.duplicateCount} reenvio(s) antigo(s) foram ignorados nos totais para nao duplicar o caixa.
+        </div>
+      ) : null}
+
       {sentCashStats.missingCount ? (
         <div className="sent-cash-warning">
           {sentCashStats.missingCount} pedido(s) sem valor detectado. Abra o pedido e confira o texto bruto do iFood.
@@ -846,7 +906,7 @@ export function OrderRouting() {
             {sentCashRows.length ? sentCashRows.map((row) => (
               <tr
                 key={row.id}
-                className={`${row.canceled ? 'is-canceled' : ''} ${!row.financial.hasFinancialData ? 'missing-value' : ''}`}
+                className={`${row.canceled ? 'is-canceled' : ''} ${row.duplicateCashEntry ? 'is-duplicate' : ''} ${!row.financial.hasFinancialData ? 'missing-value' : ''}`}
               >
                 <td className="sent-cash-order">#{row.orderNumber}</td>
                 <td>{row.customerName}</td>
@@ -857,7 +917,9 @@ export function OrderRouting() {
                   </span>
                 </td>
                 <td className="sent-cash-amount">
-                  {row.financial.hasFinancialData ? formatCurrency(row.financial.deductionValue) : 'Conferir'}
+                  {row.duplicateCashEntry
+                    ? 'Ignorado'
+                    : row.financial.hasFinancialData ? formatCurrency(row.financial.deductionValue) : 'Conferir'}
                 </td>
                 <td><StatusBadge status={row.order.status} /></td>
                 <td>{formatDateTime(row.createdAt)}</td>
@@ -881,35 +943,49 @@ export function OrderRouting() {
       </div>
 
       <div className="routing-queue-list">
-        {orders.length ? orders.map((order) => (
-          <article key={order.id} className={`routing-order-card ${order.status === 'impresso' ? 'printed' : ''}`}>
-            <div className="routing-order-card-header">
-              <strong>#{order.orderNumber || order.parsedData?.locator || 'Pedido'}</strong>
-              <StatusBadge status={order.status} />
-            </div>
-            <p>{order.customerName || order.parsedData?.customerName || 'Cliente nao identificado'}</p>
-            <small>{order.parsedData?.address?.display || order.parsedData?.address?.raw || 'Endereco nao identificado'}</small>
-            <span className="routing-source">
-              {type === 'received' ? `Origem: ${order.sourceStoreName}` : `Destino: ${order.targetStoreName}`} - {formatDateTime(order.createdAt)}
-            </span>
+        {orders.length ? orders.map((order) => {
+          const resent = isResentOrder(order);
 
-            <div className="routing-order-actions">
-              <button type="button" onClick={() => navigate(`/roteamento/imprimir/${order.id}`)}>
-                <Icon name="print" size={14} />
-                Abrir/Imprimir
-              </button>
-              {type === 'received' ? (
-                <button type="button" className="secondary" onClick={() => markPrinted(order.id)}>
-                  <Icon name="check" size={14} />
-                  Impresso
-                </button>
+          return (
+            <article
+              key={order.id}
+              className={`routing-order-card ${order.status === 'impresso' ? 'printed' : ''} ${resent ? 'resent' : ''}`}
+            >
+              <div className="routing-order-card-header">
+                <strong>#{order.orderNumber || order.parsedData?.locator || 'Pedido'}</strong>
+                <StatusBadge status={order.status} />
+              </div>
+
+              {resent ? (
+                <div className="routing-resend-warning">
+                  Atencao: este pedido esta sendo enviado novamente. O caixa mantem apenas uma entrada para ele.
+                </div>
               ) : null}
-              <button type="button" className="danger" onClick={() => cancelOrder(order.id)}>
-                <Icon name="trash" size={14} />
-              </button>
-            </div>
-          </article>
-        )) : (
+
+              <p>{order.customerName || order.parsedData?.customerName || 'Cliente nao identificado'}</p>
+              <small>{order.parsedData?.address?.display || order.parsedData?.address?.raw || 'Endereco nao identificado'}</small>
+              <span className="routing-source">
+                {type === 'received' ? `Origem: ${order.sourceStoreName}` : `Destino: ${order.targetStoreName}`} - {formatDateTime(order.createdAt)}
+              </span>
+
+              <div className="routing-order-actions">
+                <button type="button" onClick={() => navigate(`/roteamento/imprimir/${order.id}`)}>
+                  <Icon name="print" size={14} />
+                  Abrir/Imprimir
+                </button>
+                {type === 'received' ? (
+                  <button type="button" className="secondary" onClick={() => markPrinted(order.id)}>
+                    <Icon name="check" size={14} />
+                    Impresso
+                  </button>
+                ) : null}
+                <button type="button" className="danger" onClick={() => cancelOrder(order.id)}>
+                  <Icon name="trash" size={14} />
+                </button>
+              </div>
+            </article>
+          );
+        }) : (
           <div className="routing-empty-state">
             <strong>Nenhum pedido</strong>
             <span>{type === 'received' ? 'Pedidos enviados para sua loja aparecem aqui.' : 'Pedidos enviados por sua loja aparecem aqui.'}</span>
@@ -985,7 +1061,7 @@ export function OrderRouting() {
       </div>
 
       {apiError ? <div className="routing-error">{apiError}</div> : null}
-      {feedback ? <div className="routing-feedback">{feedback}</div> : null}
+      {feedback ? <div className={`routing-feedback ${feedbackType === 'warning' ? 'warning' : ''}`}>{feedback}</div> : null}
 
       <div className="routing-tabs" role="tablist" aria-label="Roteamento">
         {TABS.map((tab) => (

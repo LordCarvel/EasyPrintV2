@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Icon } from '../../shared/ui/Icon';
 import { showAppAlert } from '../../shared/ui/appDialog';
-import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
+import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_RESEND_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
 import { routingApi } from './routingApi';
 import './OrderRouting.css';
 
@@ -40,6 +40,11 @@ export function RoutingPrintOrder() {
 
     localStorage.setItem(PENDING_PRINT_TEXT_KEY, order.rawText);
     localStorage.setItem(PENDING_PRINT_AUTO_KEY, '1');
+    if (order.isResend || order.status === 'reenviado') {
+      localStorage.setItem(PENDING_PRINT_RESEND_KEY, '1');
+    } else {
+      localStorage.removeItem(PENDING_PRINT_RESEND_KEY);
+    }
 
     try {
       const payload = await routingApi.markPrinted(orderId);
@@ -48,7 +53,7 @@ export function RoutingPrintOrder() {
       console.error('Falha ao marcar pedido como impresso', err);
     }
 
-    navigate('/');
+    navigate('/impressao-manual');
   };
 
   const parsed = order?.parsedData || {};
@@ -72,6 +77,11 @@ export function RoutingPrintOrder() {
 
         {order ? (
           <div className="routing-manual-print-card">
+            {order.isResend || order.status === 'reenviado' ? (
+              <div className="routing-resend-warning">
+                Atencao: este pedido foi enviado novamente. Ele nao sera lancado outra vez no caixa.
+              </div>
+            ) : null}
             <span>Pedido #{order.orderNumber || parsed.locator || '-'}</span>
             <strong>{order.customerName || parsed.customerName || 'Cliente nao identificado'}</strong>
             <p>{address.display || address.raw || 'Endereco nao identificado'}</p>

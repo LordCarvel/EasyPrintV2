@@ -1,4 +1,4 @@
-﻿import { HashRouter as Router, Routes, Route } from 'react-router-dom';
+import { HashRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import { Header } from './layout/Header/Header';
 import { Footer } from './layout/Footer/Footer';
 import { Home } from './features/home/Home';
@@ -13,9 +13,10 @@ function AppContent() {
   return (
     <>
       <Header />
-      <div className='container'>
+      <div className="container">
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Navigate to="/roteamento" replace />} />
+          <Route path="/impressao-manual" element={<Home />} />
           <Route path="/catalogo" element={<ConfigKeywords />} />
           <Route path="/config-template" element={<ConfigTemplate />} />
           <Route path="/caixa" element={<CashRegister />} />
@@ -38,6 +39,4 @@ function App() {
   );
 }
 
-export default App
-
-
+export default App;

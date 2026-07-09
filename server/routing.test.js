@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { migrate } from './lib/database.js';
+import * as repository from './lib/repository.js';
 import { parseIfoodOrder, routeOrder } from './lib/routing-core.js';
 import { INITIAL_STORES } from './lib/seed-data.js';
 
@@ -76,5 +79,26 @@ assert.equal(paidOnline.financial.deductionValue, 55);
 const manualRoute = routeOrder(parseIfoodOrder('1\nCliente\nLoja\nRua Sem Cadastro, 99 - Bairro Novo - Cidade'), INITIAL_STORES);
 assert.equal(manualRoute.suggestedStoreId, null);
 assert.equal(manualRoute.confidence, 'manual');
+
+const db = new DatabaseSync(':memory:');
+db.exec('PRAGMA foreign_keys = ON;');
+migrate(db);
+repository.seedInitialData(db);
+
+const duplicateInput = {
+  rawText: samplePaidOnline,
+  parsedData: paidOnline,
+  routeResult: routeOrder(paidOnline, INITIAL_STORES),
+  sourceStoreId: 'penha',
+  targetStoreId: 'gravata'
+};
+const firstOrder = repository.createOrder(db, duplicateInput);
+const secondOrder = repository.createOrder(db, duplicateInput);
+const sentOrders = repository.listSentOrders(db, 'penha');
+
+assert.equal(firstOrder.id, secondOrder.id);
+assert.equal(secondOrder.status, 'reenviado');
+assert.equal(secondOrder.isResend, true);
+assert.equal(sentOrders.length, 1);
 
 console.log('routing.test.js OK');

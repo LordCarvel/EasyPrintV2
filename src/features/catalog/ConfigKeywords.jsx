@@ -47,11 +47,39 @@ const DEFAULT_CATALOGS = [
   {
     id: 1,
     name: 'Esfihas',
-    content: `Esfiha de Carne:8,98;
-Frango c/ Catupiry:6,99;
-Confetes doce:6,49;
-Nutella c/ Ninho:6,49;
-Pizza:5,49;`
+    content: `Carne:4,49;
+Carne Queijo:5,49;
+Pizza:5,49;
+Frango:5,49;
+Frango com Catupiry Original:5,99;
+Frango com Cheddar:5,49;
+Frango com Requeijao:5,49;
+Calabresa:5,49;
+Calabresa com Catupiry Original:5,99;
+Calabresa com Cheddar:5,49;
+Calabresa com Requeijao:5,49;
+Bacon:5,49;
+Bacon com Catupiry Original:5,99;
+Bacon com Cheddar:5,49;
+Bacon com Requeijao:5,49;
+Brocolis com Bacon:5,49;
+Mussarela:5,49;
+4 Queijos:5,49;
+Alho e Oleo:5,49;
+Atum:5,49;
+Palmito:5,49;
+Brigadeiro:6,49;
+Confetes:6,49;
+Chocolate:6,49;
+Chocolate Branco:6,49;
+Nutella com Ninho:6,49;
+Prestigio:6,49;
+Ovomaltine:6,49;
+Combo 10 Esfihas + Kuat 2L:47,99;
+Combo 12 Esfihas Especiais:46,99;
+Combo 15 Esfihas + Kuat 2L:72,99;
+Combo 20 Esfihas + Kuat 2L:84,99;
+Combo 20 Esfihas de Carne + Coca 2L:82,99;`
   },
   {
     id: 2,
