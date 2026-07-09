@@ -152,6 +152,18 @@ const ensureOrderAccess = (request, order, currentStore, response) => {
   return true;
 };
 
+const getVersionFromBody = (body = {}) => {
+  const version = Number(body.version);
+  return Number.isInteger(version) && version > 0 ? version : null;
+};
+
+const sendOrderVersionConflict = (request, response, error) => {
+  sendError(request, response, 409, error.message || 'Esse pedido foi atualizado em outra maquina. Recarregue a fila.', {
+    code: error.code || 'ORDER_VERSION_CONFLICT',
+    order: error.order || null
+  });
+};
+
 const handleSetupStores = async (request, response) => {
   if (request.method === 'GET') {
     sendJson(request, response, 200, { stores: await dataStore.listStores() });
@@ -371,26 +383,96 @@ const handleOrderById = async (request, response, orderId, action) => {
     return true;
   }
 
+  if (action === 'events' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    const type = String(body.type || '').trim();
+    const message = String(body.message || '').trim();
+
+    if (!type || !message) {
+      sendError(request, response, 400, 'Informe tipo e mensagem do evento.');
+      return true;
+    }
+
+    await dataStore.addOrderEvent(order.id, type, message);
+    sendJson(request, response, 201, { events: await dataStore.listOrderEvents(order.id) });
+    return true;
+  }
+
+  if (action === 'status' && request.method === 'PATCH') {
+    const body = await readJsonBody(request);
+    const nextStatus = String(body.status || '').trim();
+    const version = getVersionFromBody(body);
+
+    if (!version) {
+      sendOrderVersionConflict(request, response, { order });
+      return true;
+    }
+
+    if (nextStatus === ORDER_STATUS.VIEWED) {
+      if (order.targetStoreId !== currentStore.id) {
+        sendError(request, response, 403, 'Apenas a loja destino pode marcar o pedido como visto.');
+        return true;
+      }
+      sendJson(request, response, 200, { order: await dataStore.markOrderViewed(order.id, version) });
+      return true;
+    }
+
+    if (nextStatus === ORDER_STATUS.PRINTED) {
+      if (order.targetStoreId !== currentStore.id) {
+        sendError(request, response, 403, 'Apenas a loja destino pode marcar o pedido como impresso.');
+        return true;
+      }
+      sendJson(request, response, 200, { order: await dataStore.markOrderPrinted(order.id, version) });
+      return true;
+    }
+
+    if (nextStatus === ORDER_STATUS.CANCELED) {
+      sendJson(request, response, 200, { order: await dataStore.cancelOrder(order.id, version) });
+      return true;
+    }
+
+    sendError(request, response, 400, 'Status de pedido invalido.');
+    return true;
+  }
+
   if (action === 'view' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    const version = getVersionFromBody(body);
     if (order.targetStoreId !== currentStore.id) {
       sendError(request, response, 403, 'Apenas a loja destino pode marcar o pedido como visto.');
       return true;
     }
-    sendJson(request, response, 200, { order: await dataStore.markOrderViewed(order.id) });
+    if (!version) {
+      sendOrderVersionConflict(request, response, { order });
+      return true;
+    }
+    sendJson(request, response, 200, { order: await dataStore.markOrderViewed(order.id, version) });
     return true;
   }
 
   if (action === 'printed' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    const version = getVersionFromBody(body);
     if (order.targetStoreId !== currentStore.id) {
       sendError(request, response, 403, 'Apenas a loja destino pode marcar o pedido como impresso.');
       return true;
     }
-    sendJson(request, response, 200, { order: await dataStore.markOrderPrinted(order.id) });
+    if (!version) {
+      sendOrderVersionConflict(request, response, { order });
+      return true;
+    }
+    sendJson(request, response, 200, { order: await dataStore.markOrderPrinted(order.id, version) });
     return true;
   }
 
   if (action === 'cancel' && request.method === 'POST') {
-    sendJson(request, response, 200, { order: await dataStore.cancelOrder(order.id) });
+    const body = await readJsonBody(request);
+    const version = getVersionFromBody(body);
+    if (!version) {
+      sendOrderVersionConflict(request, response, { order });
+      return true;
+    }
+    sendJson(request, response, 200, { order: await dataStore.cancelOrder(order.id, version) });
     return true;
   }
 
@@ -453,6 +535,10 @@ const handleRequest = async (request, response) => {
     sendError(request, response, 404, 'Rota nao encontrada.');
   } catch (error) {
     console.error(error);
+    if (error.code === 'ORDER_VERSION_CONFLICT') {
+      sendOrderVersionConflict(request, response, error);
+      return;
+    }
     sendError(request, response, error.statusCode || 500, error.message || 'Erro interno.');
   }
 };

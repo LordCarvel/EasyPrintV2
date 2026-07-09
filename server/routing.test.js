@@ -99,6 +99,16 @@ const sentOrders = repository.listSentOrders(db, 'penha');
 assert.equal(firstOrder.id, secondOrder.id);
 assert.equal(secondOrder.status, 'reenviado');
 assert.equal(secondOrder.isResend, true);
+assert.equal(firstOrder.version, 1);
+assert.equal(secondOrder.version, 2);
 assert.equal(sentOrders.length, 1);
+
+const printedOrder = repository.markOrderPrinted(db, secondOrder.id, secondOrder.version);
+assert.equal(printedOrder.status, 'impresso');
+assert.equal(printedOrder.version, 3);
+assert.throws(
+  () => repository.cancelOrder(db, secondOrder.id, secondOrder.version),
+  (error) => error?.statusCode === 409 && error?.code === 'ORDER_VERSION_CONFLICT'
+);
 
 console.log('routing.test.js OK');

@@ -126,7 +126,29 @@ export const routingApi = {
   listReceivedOrders: () => apiRequest('/api/orders/received'),
   listSentOrders: () => apiRequest('/api/orders/sent'),
   getOrder: (orderId) => apiRequest(`/api/orders/${encodeURIComponent(orderId)}`),
-  markViewed: (orderId) => apiRequest(`/api/orders/${encodeURIComponent(orderId)}/view`, { method: 'POST' }),
-  markPrinted: (orderId) => apiRequest(`/api/orders/${encodeURIComponent(orderId)}/printed`, { method: 'POST' }),
-  cancelOrder: (orderId) => apiRequest(`/api/orders/${encodeURIComponent(orderId)}/cancel`, { method: 'POST' })
+  addOrderEvent: (orderId, body) =>
+    apiRequest(`/api/orders/${encodeURIComponent(orderId)}/events`, {
+      method: 'POST',
+      body
+    }),
+  updateOrderStatus: (orderId, status, version) =>
+    apiRequest(`/api/orders/${encodeURIComponent(orderId)}/status`, {
+      method: 'PATCH',
+      body: { status, version }
+    }),
+  markViewed: (orderId, version) =>
+    apiRequest(`/api/orders/${encodeURIComponent(orderId)}/view`, {
+      method: 'POST',
+      body: { version }
+    }),
+  markPrinted: (orderId, version) =>
+    apiRequest(`/api/orders/${encodeURIComponent(orderId)}/printed`, {
+      method: 'POST',
+      body: { version }
+    }),
+  cancelOrder: (orderId, version) =>
+    apiRequest(`/api/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'POST',
+      body: { version }
+    })
 };

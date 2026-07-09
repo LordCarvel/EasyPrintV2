@@ -4,6 +4,27 @@ import { INITIAL_STORES } from './seed-data.js';
 import { createPasswordHash, createSessionToken, normalizeUsername, verifyPassword } from './auth.js';
 
 const RESEND_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ORDER_VERSION_CONFLICT_MESSAGE = 'Esse pedido foi atualizado em outra maquina. Recarregue a fila.';
+
+const createOrderConflictError = (order = null) => {
+  const error = new Error(ORDER_VERSION_CONFLICT_MESSAGE);
+  error.statusCode = 409;
+  error.code = 'ORDER_VERSION_CONFLICT';
+  error.order = order;
+  return error;
+};
+
+const normalizeExpectedVersion = (value) => {
+  const version = Number(value);
+  return Number.isInteger(version) && version > 0 ? version : null;
+};
+
+const assertOrderVersion = (order, expectedVersion) => {
+  const version = normalizeExpectedVersion(expectedVersion);
+  if (!order || version === null || order.version !== version) {
+    throw createOrderConflictError(order);
+  }
+};
 
 const rowToStore = (row) => row && ({
   id: row.id,
@@ -37,7 +58,9 @@ const rowToOrder = (row) => row && ({
   parsedData: decodeJson(row.parsed_data, {}),
   routeResult: decodeJson(row.route_result, {}),
   status: row.status,
+  version: Number(row.version || 1),
   createdAt: row.created_at,
+  updatedAt: row.updated_at || row.created_at,
   viewedAt: row.viewed_at || '',
   printedAt: row.printed_at || '',
   canceledAt: row.canceled_at || '',
@@ -426,7 +449,9 @@ export const createOrder = (db, input) => {
           parsed_data = ?,
           route_result = ?,
           status = ?,
+          version = version + 1,
           created_at = ?,
+          updated_at = ?,
           viewed_at = NULL,
           printed_at = NULL,
           canceled_at = NULL
@@ -438,6 +463,7 @@ export const createOrder = (db, input) => {
       encodeJson(input.parsedData),
       encodeJson(input.routeResult),
       ORDER_STATUS.RESENT,
+      now,
       now,
       existing.id
     );
@@ -452,8 +478,8 @@ export const createOrder = (db, input) => {
   db.prepare(`
     INSERT INTO orders (
       id, order_number, customer_name, source_store_id, target_store_id, raw_text,
-      parsed_data, route_result, status, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      parsed_data, route_result, status, version, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     orderId,
     orderNumber,
@@ -464,6 +490,8 @@ export const createOrder = (db, input) => {
     encodeJson(input.parsedData),
     encodeJson(input.routeResult),
     ORDER_STATUS.SENT,
+    1,
+    now,
     now
   );
 
@@ -489,31 +517,64 @@ export const listSentOrders = (db, storeId) =>
     ORDER BY o.created_at DESC
   `).all(storeId).map(rowToOrder);
 
-export const markOrderViewed = (db, orderId) => {
+export const markOrderViewed = (db, orderId, expectedVersion) => {
   const order = getOrder(db, orderId);
   if (!order) return null;
+  assertOrderVersion(order, expectedVersion);
+
   if ([ORDER_STATUS.SENT].includes(order.status)) {
-    db.prepare('UPDATE orders SET status = ?, viewed_at = COALESCE(viewed_at, ?) WHERE id = ?')
-      .run(ORDER_STATUS.VIEWED, nowIso(), orderId);
+    const now = nowIso();
+    const result = db.prepare(`
+      UPDATE orders
+      SET status = ?,
+          viewed_at = COALESCE(viewed_at, ?),
+          updated_at = ?,
+          version = version + 1
+      WHERE id = ?
+        AND version = ?
+    `).run(ORDER_STATUS.VIEWED, now, now, orderId, expectedVersion);
+    if (result.changes !== 1) throw createOrderConflictError(getOrder(db, orderId));
     addOrderEvent(db, orderId, ORDER_STATUS.VIEWED, 'Pedido aberto pela loja destino.');
   }
   return getOrder(db, orderId);
 };
 
-export const markOrderPrinted = (db, orderId) => {
+export const markOrderPrinted = (db, orderId, expectedVersion) => {
   const order = getOrder(db, orderId);
   if (!order) return null;
-  db.prepare('UPDATE orders SET status = ?, printed_at = ? WHERE id = ?')
-    .run(ORDER_STATUS.PRINTED, nowIso(), orderId);
+  assertOrderVersion(order, expectedVersion);
+
+  const now = nowIso();
+  const result = db.prepare(`
+    UPDATE orders
+    SET status = ?,
+        printed_at = ?,
+        updated_at = ?,
+        version = version + 1
+    WHERE id = ?
+      AND version = ?
+  `).run(ORDER_STATUS.PRINTED, now, now, orderId, expectedVersion);
+  if (result.changes !== 1) throw createOrderConflictError(getOrder(db, orderId));
   addOrderEvent(db, orderId, ORDER_STATUS.PRINTED, 'Pedido marcado como impresso.');
   return getOrder(db, orderId);
 };
 
-export const cancelOrder = (db, orderId) => {
+export const cancelOrder = (db, orderId, expectedVersion) => {
   const order = getOrder(db, orderId);
   if (!order) return null;
-  db.prepare('UPDATE orders SET status = ?, canceled_at = ? WHERE id = ?')
-    .run(ORDER_STATUS.CANCELED, nowIso(), orderId);
+  assertOrderVersion(order, expectedVersion);
+
+  const now = nowIso();
+  const result = db.prepare(`
+    UPDATE orders
+    SET status = ?,
+        canceled_at = ?,
+        updated_at = ?,
+        version = version + 1
+    WHERE id = ?
+      AND version = ?
+  `).run(ORDER_STATUS.CANCELED, now, now, orderId, expectedVersion);
+  if (result.changes !== 1) throw createOrderConflictError(getOrder(db, orderId));
   addOrderEvent(db, orderId, ORDER_STATUS.CANCELED, 'Pedido cancelado/removido.');
   return getOrder(db, orderId);
 };

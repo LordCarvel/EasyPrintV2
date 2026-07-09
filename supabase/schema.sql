@@ -37,11 +37,25 @@ create table if not exists public.orders (
   parsed_data jsonb not null default '{}'::jsonb,
   route_result jsonb not null default '{}'::jsonb,
   status text not null,
+  version integer not null default 1,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   viewed_at timestamptz,
   printed_at timestamptz,
   canceled_at timestamptz
 );
+
+alter table public.orders
+  add column if not exists version integer not null default 1;
+
+alter table public.orders
+  add column if not exists updated_at timestamptz not null default now();
+
+update public.orders
+set updated_at = coalesce(updated_at, created_at, now()),
+    version = coalesce(version, 1)
+where updated_at is null
+   or version is null;
 
 create index if not exists orders_source_store_created_idx
   on public.orders(source_store_id, created_at desc);

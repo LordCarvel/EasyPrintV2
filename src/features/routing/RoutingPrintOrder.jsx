@@ -18,9 +18,13 @@ export function RoutingPrintOrder() {
       setOrder(payload.order);
 
       try {
-        const viewed = await routingApi.markViewed(orderId);
+        const viewed = await routingApi.markViewed(orderId, payload.order.version);
         setOrder(viewed.order);
-      } catch {
+      } catch (err) {
+        if (err.status === 409) {
+          const refreshed = await routingApi.getOrder(orderId);
+          setOrder(refreshed.order);
+        }
         // A loja origem pode abrir o historico enviado, mas so a loja destino marca como visto.
       }
     } catch (err) {
@@ -38,19 +42,25 @@ export function RoutingPrintOrder() {
       return;
     }
 
+    try {
+      const payload = await routingApi.markPrinted(orderId, order.version);
+      setOrder(payload.order);
+    } catch (err) {
+      if (err.status === 409) {
+        const refreshed = await routingApi.getOrder(orderId);
+        setOrder(refreshed.order);
+        void showAppAlert(err.message);
+        return;
+      }
+      console.error('Falha ao marcar pedido como impresso', err);
+    }
+
     localStorage.setItem(PENDING_PRINT_TEXT_KEY, order.rawText);
     localStorage.setItem(PENDING_PRINT_AUTO_KEY, '1');
     if (order.isResend || order.status === 'reenviado') {
       localStorage.setItem(PENDING_PRINT_RESEND_KEY, '1');
     } else {
       localStorage.removeItem(PENDING_PRINT_RESEND_KEY);
-    }
-
-    try {
-      const payload = await routingApi.markPrinted(orderId);
-      setOrder(payload.order);
-    } catch (err) {
-      console.error('Falha ao marcar pedido como impresso', err);
     }
 
     navigate('/impressao-manual');

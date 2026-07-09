@@ -4,6 +4,28 @@ import { INITIAL_STORES } from './seed-data.js';
 import { createPasswordHash, createSessionToken, normalizeUsername, verifyPassword } from './auth.js';
 
 const RESEND_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ORDER_VERSION_CONFLICT_MESSAGE = 'Esse pedido foi atualizado em outra maquina. Recarregue a fila.';
+
+const createOrderConflictError = (order = null) => {
+  const error = new Error(ORDER_VERSION_CONFLICT_MESSAGE);
+  error.statusCode = 409;
+  error.code = 'ORDER_VERSION_CONFLICT';
+  error.order = order;
+  return error;
+};
+
+const normalizeExpectedVersion = (value) => {
+  const version = Number(value);
+  return Number.isInteger(version) && version > 0 ? version : null;
+};
+
+const assertOrderVersion = (order, expectedVersion) => {
+  const version = normalizeExpectedVersion(expectedVersion);
+  if (!order || version === null || order.version !== version) {
+    throw createOrderConflictError(order);
+  }
+  return version;
+};
 
 export const nowIso = () => new Date().toISOString();
 
@@ -74,7 +96,9 @@ const orderSelect = `
   parsed_data,
   route_result,
   status,
+  version,
   created_at,
+  updated_at,
   viewed_at,
   printed_at,
   canceled_at,
@@ -114,7 +138,9 @@ const rowToOrder = (row) => row && ({
   parsedData: toJsonObject(parseJsonValue(row.parsed_data, {})),
   routeResult: toJsonObject(parseJsonValue(row.route_result, {})),
   status: row.status,
+  version: Number(row.version || 1),
   createdAt: row.created_at,
+  updatedAt: row.updated_at || row.created_at,
   viewedAt: row.viewed_at || '',
   printedAt: row.printed_at || '',
   canceledAt: row.canceled_at || '',
@@ -137,7 +163,7 @@ const findRecentOrderForResend = async (db, input) => {
 
   const rows = await readMany(
     db.from('orders')
-      .select('id, created_at')
+      .select('id, created_at, version')
       .eq('source_store_id', input.sourceStoreId)
       .eq('target_store_id', input.targetStoreId)
       .eq('order_number', orderNumber)
@@ -543,7 +569,9 @@ export const createOrder = async (db, input) => {
         parsed_data: input.parsedData,
         route_result: input.routeResult,
         status: ORDER_STATUS.RESENT,
+        version: Number(existing.version || 1) + 1,
         created_at: now,
+        updated_at: now,
         viewed_at: null,
         printed_at: null,
         canceled_at: null
@@ -567,7 +595,9 @@ export const createOrder = async (db, input) => {
     parsed_data: input.parsedData,
     route_result: input.routeResult,
     status: ORDER_STATUS.SENT,
-    created_at: now
+    version: 1,
+    created_at: now,
+    updated_at: now
   });
   throwIfError(error);
 
@@ -605,50 +635,74 @@ export const listSentOrders = async (db, storeId) => {
   return rows.map(rowToOrder);
 };
 
-export const markOrderViewed = async (db, orderId) => {
+export const markOrderViewed = async (db, orderId, expectedVersion) => {
   const order = await getOrder(db, orderId);
   if (!order) return null;
+  const version = assertOrderVersion(order, expectedVersion);
 
   if ([ORDER_STATUS.SENT].includes(order.status)) {
-    const { error } = await db.from('orders')
+    const now = nowIso();
+    const { data, error } = await db.from('orders')
       .update({
         status: ORDER_STATUS.VIEWED,
-        viewed_at: order.viewedAt || nowIso()
+        viewed_at: order.viewedAt || now,
+        updated_at: now,
+        version: version + 1
       })
-      .eq('id', orderId);
+      .eq('id', orderId)
+      .eq('version', version)
+      .select('id')
+      .maybeSingle();
     throwIfError(error);
+    if (!data) throw createOrderConflictError(await getOrder(db, orderId));
     await addOrderEvent(db, orderId, ORDER_STATUS.VIEWED, 'Pedido aberto pela loja destino.');
   }
 
   return getOrder(db, orderId);
 };
 
-export const markOrderPrinted = async (db, orderId) => {
+export const markOrderPrinted = async (db, orderId, expectedVersion) => {
   const order = await getOrder(db, orderId);
   if (!order) return null;
+  const version = assertOrderVersion(order, expectedVersion);
 
-  const { error } = await db.from('orders')
+  const now = nowIso();
+  const { data, error } = await db.from('orders')
     .update({
       status: ORDER_STATUS.PRINTED,
-      printed_at: nowIso()
+      printed_at: now,
+      updated_at: now,
+      version: version + 1
     })
-    .eq('id', orderId);
+    .eq('id', orderId)
+    .eq('version', version)
+    .select('id')
+    .maybeSingle();
   throwIfError(error);
+  if (!data) throw createOrderConflictError(await getOrder(db, orderId));
   await addOrderEvent(db, orderId, ORDER_STATUS.PRINTED, 'Pedido marcado como impresso.');
   return getOrder(db, orderId);
 };
 
-export const cancelOrder = async (db, orderId) => {
+export const cancelOrder = async (db, orderId, expectedVersion) => {
   const order = await getOrder(db, orderId);
   if (!order) return null;
+  const version = assertOrderVersion(order, expectedVersion);
 
-  const { error } = await db.from('orders')
+  const now = nowIso();
+  const { data, error } = await db.from('orders')
     .update({
       status: ORDER_STATUS.CANCELED,
-      canceled_at: nowIso()
+      canceled_at: now,
+      updated_at: now,
+      version: version + 1
     })
-    .eq('id', orderId);
+    .eq('id', orderId)
+    .eq('version', version)
+    .select('id')
+    .maybeSingle();
   throwIfError(error);
+  if (!data) throw createOrderConflictError(await getOrder(db, orderId));
   await addOrderEvent(db, orderId, ORDER_STATUS.CANCELED, 'Pedido cancelado/removido.');
   return getOrder(db, orderId);
 };

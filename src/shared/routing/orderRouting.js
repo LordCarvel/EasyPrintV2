@@ -130,15 +130,13 @@ const DEFAULT_RULES = [
 const DEFAULT_STATE = {
   currentStoreId: 'penha',
   stores: DEFAULT_STORES,
-  rules: DEFAULT_RULES,
-  orders: []
+  rules: DEFAULT_RULES
 };
 
 export const getDefaultRoutingState = () => ({
   ...DEFAULT_STATE,
   stores: DEFAULT_STORES.map((store) => ({ ...store })),
-  rules: DEFAULT_RULES.map((rule) => ({ ...rule })),
-  orders: []
+  rules: DEFAULT_RULES.map((rule) => ({ ...rule }))
 });
 
 export const normalizeText = (value = '') =>
@@ -198,37 +196,21 @@ export const normalizeRoutingState = (value = {}) => {
   const rules = asArray(value.rules)
     .map(normalizeRule)
     .filter((rule) => rule.id && rule.targetStoreId && storeIds.has(rule.targetStoreId));
-  const orders = asArray(value.orders).filter((order) => order && typeof order === 'object');
   const currentStoreId = storeIds.has(value.currentStoreId) ? value.currentStoreId : validStores[0]?.id || '';
 
   return {
     currentStoreId,
     stores: validStores,
-    rules: hasRulesInput ? rules : fallback.rules,
-    orders
+    rules: hasRulesInput ? rules : fallback.rules
   };
 };
 
 export const loadRoutingState = () => {
-  if (typeof window === 'undefined') return getDefaultRoutingState();
-
-  try {
-    const raw = window.localStorage.getItem(ROUTING_STATE_KEY);
-    return raw ? normalizeRoutingState(JSON.parse(raw)) : getDefaultRoutingState();
-  } catch (error) {
-    console.error('Falha ao carregar roteamento de pedidos', error);
-    return getDefaultRoutingState();
-  }
+  return getDefaultRoutingState();
 };
 
 export const saveRoutingState = (state) => {
-  const normalized = normalizeRoutingState(state);
-
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(ROUTING_STATE_KEY, JSON.stringify(normalized));
-  }
-
-  return normalized;
+  return normalizeRoutingState(state);
 };
 
 const cleanOrderLine = (line = '') =>

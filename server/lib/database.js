@@ -55,7 +55,9 @@ export const migrate = (db) => {
       parsed_data TEXT NOT NULL,
       route_result TEXT NOT NULL,
       status TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
       viewed_at TEXT,
       printed_at TEXT,
       canceled_at TEXT,
@@ -69,6 +71,7 @@ export const migrate = (db) => {
       type TEXT NOT NULL,
       message TEXT NOT NULL,
       created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
       FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
     );
 
@@ -102,6 +105,25 @@ export const migrate = (db) => {
   ensureColumn(db, 'store_settings', 'delivery_board_state', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'store_settings', 'finally_storage_state', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'store_settings', 'finally_storage_preview', "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, 'orders', 'version', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'orders', 'updated_at', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'order_events', 'updated_at', "TEXT NOT NULL DEFAULT ''");
+
+  db.prepare(`
+    UPDATE orders
+    SET updated_at = COALESCE(NULLIF(updated_at, ''), created_at, ?),
+        version = COALESCE(version, 1)
+    WHERE updated_at IS NULL
+       OR updated_at = ''
+       OR version IS NULL
+  `).run(nowIso());
+
+  db.prepare(`
+    UPDATE order_events
+    SET updated_at = COALESCE(NULLIF(updated_at, ''), created_at, ?)
+    WHERE updated_at IS NULL
+       OR updated_at = ''
+  `).run(nowIso());
 
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS stores_username_unique

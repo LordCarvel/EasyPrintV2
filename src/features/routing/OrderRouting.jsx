@@ -603,24 +603,40 @@ export function OrderRouting() {
     }
   };
 
-  const markPrinted = async (orderId) => {
+  const markPrinted = async (order) => {
     try {
-      await routingApi.markPrinted(orderId);
+      await routingApi.markPrinted(order.id, order.version);
       await loadOrders();
     } catch (err) {
+      if (err.status === 409) {
+        await loadOrders();
+      }
       void showAppAlert(err.message);
     }
   };
 
-  const cancelOrder = async (orderId) => {
+  const cancelOrder = async (order) => {
     if (!(await confirmAction('Cancelar/remover este pedido da fila?'))) return;
     try {
-      await routingApi.cancelOrder(orderId);
+      await routingApi.cancelOrder(order.id, order.version);
       await loadOrders();
     } catch (err) {
+      if (err.status === 409) {
+        await loadOrders();
+      }
       void showAppAlert(err.message);
     }
   };
+
+  useEffect(() => {
+    if (!currentStoreId) return undefined;
+
+    const timer = window.setInterval(() => {
+      void loadOrders();
+    }, 10000);
+
+    return () => window.clearInterval(timer);
+  }, [currentStoreId]);
 
   useEffect(() => {
     const handleReceivedOrdersUpdate = (event) => {
@@ -986,12 +1002,12 @@ export function OrderRouting() {
                   Abrir/Imprimir
                 </button>
                 {type === 'received' ? (
-                  <button type="button" className="secondary" onClick={() => markPrinted(order.id)}>
+                  <button type="button" className="secondary" onClick={() => markPrinted(order)}>
                     <Icon name="check" size={14} />
                     Impresso
                   </button>
                 ) : null}
-                <button type="button" className="danger" onClick={() => cancelOrder(order.id)}>
+                <button type="button" className="danger" onClick={() => cancelOrder(order)}>
                   <Icon name="trash" size={14} />
                 </button>
               </div>

@@ -19,6 +19,7 @@ const methods = [
   'markOrderViewed',
   'markOrderPrinted',
   'cancelOrder',
+  'addOrderEvent',
   'listOrderEvents',
   'seedInitialData',
   'connectStoreToAll'
