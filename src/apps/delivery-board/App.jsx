@@ -136,6 +136,8 @@ function App() {
     replaceStore,
     reconcileHubOrders,
     store,
+    isActionLocked,
+    saveError,
   } = useDeliveryBoard();
 
   const [addMotoboyModalOpen, setAddMotoboyModalOpen] = useState(false);
@@ -560,36 +562,52 @@ function App() {
 
   const handleDeleteViagem = async (viagemId) => {
     if (!(await confirmAction('Excluir esta viagem e suas entregas?'))) return;
-    removeViagem(viagemId, { cascade: true });
+    try {
+      removeViagem(viagemId, { cascade: true });
+    } catch (error) {
+      void showAppAlert(error.message || 'Erro ao excluir viagem');
+    }
   };
 
   const handleCloseViagem = async (viagemId) => {
-    closeViagem(viagemId);
+    try {
+      closeViagem(viagemId);
+    } catch (error) {
+      void showAppAlert(error.message || 'Erro ao fechar viagem');
+    }
   };
 
   const handleReopenViagem = async (viagemId) => {
-    reopenViagem(viagemId);
+    try {
+      reopenViagem(viagemId);
+    } catch (error) {
+      void showAppAlert(error.message || 'Erro ao reabrir viagem');
+    }
   };
 
   const handleDeleteMotoboy = async (motoboyId) => {
     if (!(await confirmAction('Excluir este motoboy e todas as suas viagens?'))) return;
-    removeMotoboy(motoboyId, { cascade: true });
+    try {
+      removeMotoboy(motoboyId, { cascade: true });
+    } catch (error) {
+      void showAppAlert(error.message || 'Erro ao excluir motoboy');
+    }
   };
 
   const handleEditEntrega = (data) => {
     if (!currentEntregaId) return;
 
-    if (data.action === 'delete') {
-      removeEntrega(currentEntregaId);
-      setEditPedidoModalOpen(false);
-      setCurrentEntregaId(null);
-      return;
-    }
-
     const entregaAlvo = entregas.find((entrega) => entrega.id === currentEntregaId);
     if (!entregaAlvo) return;
 
     try {
+      if (data.action === 'delete') {
+        removeEntrega(currentEntregaId);
+        setEditPedidoModalOpen(false);
+        setCurrentEntregaId(null);
+        return;
+      }
+
       if (data.targetViagemId && data.targetViagemId !== entregaAlvo.viagemId) {
         moveEntrega(currentEntregaId, data.targetViagemId);
       }
@@ -620,7 +638,11 @@ function App() {
 
   const handleReopenEntrega = (entregaId) => {
     if (!entregaId) return;
-    updateEntrega(entregaId, { statusEntrega: 'pendente' });
+    try {
+      updateEntrega(entregaId, { statusEntrega: 'pendente' });
+    } catch (error) {
+      void showAppAlert(error.message || 'Erro ao reabrir entrega');
+    }
   };
 
   const handleSearch = (value) => {
@@ -629,11 +651,15 @@ function App() {
 
   const handleClearAll = async () => {
     if (!(await confirmAction('Apagar todos os dados deste workspace?'))) return;
-    clearStore();
-    localStorage.removeItem('deliveryBoardV2');
-    localStorage.removeItem('motoboys');
-    setSearchQuery('');
-    setHighlightedIds(new Set());
+    try {
+      clearStore();
+      localStorage.removeItem('deliveryBoardV2');
+      localStorage.removeItem('motoboys');
+      setSearchQuery('');
+      setHighlightedIds(new Set());
+    } catch (error) {
+      void showAppAlert(error.message || 'Erro ao limpar dados');
+    }
   };
 
   const handleSetWorkspace = (newWorkspace) => {
@@ -649,10 +675,14 @@ function App() {
   const handleImport = async (file) => {
     const result = await importFromJSON(file);
     if (result.success) {
-      replaceStore(result.data);
-      setHighlightedIds(new Set());
-      setSearchQuery('');
-      void showAppAlert('Importacao concluida');
+      try {
+        replaceStore(result.data);
+        setHighlightedIds(new Set());
+        setSearchQuery('');
+        void showAppAlert('Importacao concluida');
+      } catch (error) {
+        void showAppAlert(error.message || 'Erro ao importar dados');
+      }
     } else {
       void showAppAlert(`Falha ao importar: ${result.error}`, { tone: 'danger' });
     }
@@ -810,6 +840,17 @@ function App() {
     <div className="body">
       <Header />
       <main className="main-content">
+        {isActionLocked && (
+          <div className="delivery-save-lock" role="status" aria-live="polite">
+            <strong>Salvando no banco...</strong>
+            <span>Aguarde um instante antes de fazer outra acao.</span>
+          </div>
+        )}
+        {saveError && (
+          <div className="delivery-save-error" role="alert">
+            {saveError}
+          </div>
+        )}
         <RouteBar />
         <Controls
           searchValue={searchQuery}

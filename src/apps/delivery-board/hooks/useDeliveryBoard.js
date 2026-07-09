@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocalStorage } from './useLocalStorage';
 import domain, { emptyStore } from '../core/domain';
 import { reconcileEntregasWithSharedOrders } from '../utils/deliveryHub';
 import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../../../features/routing/storeSettingsClient';
+
+const SAVE_LOCK_MS = 1000;
+const SAVE_LOCK_MESSAGE = 'Aguarde salvar no banco antes de fazer outra acao.';
 
 function coerceStoreShape(candidate) {
   if (!candidate || typeof candidate !== 'object') return { ...emptyStore };
@@ -41,7 +44,88 @@ function migrateLegacyMotoboys(raw) {
 // Persists a single store object { motoboys, viagens, entregas } in localStorage under given key.
 export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
   const [store, setStore] = useLocalStorage(storageKey, emptyStore);
+  const [isActionLocked, setIsActionLocked] = useState(true);
+  const [saveError, setSaveError] = useState('');
   const profileHydratedRef = useRef(false);
+  const isActionLockedRef = useRef(true);
+  const persistInFlightRef = useRef(false);
+  const queuedStoreRef = useRef(null);
+  const lockActivationTimerRef = useRef(null);
+  const unlockTimerRef = useRef(null);
+  const lockStartedAtRef = useRef(Date.now());
+  const latestPersistedJsonRef = useRef('');
+
+  const setActionLock = useCallback((locked) => {
+    isActionLockedRef.current = locked;
+    setIsActionLocked(locked);
+  }, []);
+
+  const beginSaveLock = useCallback(() => {
+    if (unlockTimerRef.current) {
+      window.clearTimeout(unlockTimerRef.current);
+      unlockTimerRef.current = null;
+    }
+
+    lockStartedAtRef.current = Date.now();
+
+    if (!lockActivationTimerRef.current) {
+      lockActivationTimerRef.current = window.setTimeout(() => {
+        lockActivationTimerRef.current = null;
+        setActionLock(true);
+      }, 0);
+    }
+  }, [setActionLock]);
+
+  const releaseSaveLockWhenReady = useCallback(() => {
+    const elapsed = Date.now() - lockStartedAtRef.current;
+    const waitMs = Math.max(0, SAVE_LOCK_MS - elapsed);
+
+    if (unlockTimerRef.current) {
+      window.clearTimeout(unlockTimerRef.current);
+    }
+
+    unlockTimerRef.current = window.setTimeout(() => {
+      if (!persistInFlightRef.current && !queuedStoreRef.current) {
+        setActionLock(false);
+      }
+    }, waitMs);
+  }, [setActionLock]);
+
+  const assertCanMutate = useCallback(() => {
+    if (!profileHydratedRef.current || isActionLockedRef.current) {
+      throw new Error(SAVE_LOCK_MESSAGE);
+    }
+
+    beginSaveLock();
+  }, [beginSaveLock]);
+
+  const flushSaveQueue = useCallback(async () => {
+    if (persistInFlightRef.current) return;
+
+    persistInFlightRef.current = true;
+
+    try {
+      while (queuedStoreRef.current) {
+        const nextStore = coerceStoreShape(queuedStoreRef.current);
+        queuedStoreRef.current = null;
+        await saveStoreSettingsPatch({ deliveryBoardState: nextStore });
+        latestPersistedJsonRef.current = JSON.stringify(nextStore);
+        setSaveError('');
+      }
+    } catch (error) {
+      const message = error?.message || 'Falha ao salvar Delivery Board no perfil da loja.';
+      setSaveError(message);
+      console.error('Falha ao salvar Delivery Board no perfil da loja', error);
+    } finally {
+      persistInFlightRef.current = false;
+
+      if (queuedStoreRef.current) {
+        void flushSaveQueue();
+      } else {
+        releaseSaveLockWhenReady();
+      }
+    }
+  }, [releaseSaveLockWhenReady]);
 
   useEffect(() => {
     let canceled = false;
@@ -50,30 +134,47 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
       .then((settings) => {
         if (canceled) return;
         if (settings.deliveryBoardState && typeof settings.deliveryBoardState === 'object') {
-          setStore(coerceStoreShape(settings.deliveryBoardState));
+          const nextStore = coerceStoreShape(settings.deliveryBoardState);
+          latestPersistedJsonRef.current = JSON.stringify(nextStore);
+          setStore(nextStore);
         }
       })
       .catch((error) => {
         console.warn('Usando entregas locais porque o perfil da loja nao carregou', error);
       })
       .finally(() => {
-        if (!canceled) profileHydratedRef.current = true;
+        if (!canceled) {
+          profileHydratedRef.current = true;
+          setActionLock(false);
+        }
       });
 
     return () => {
       canceled = true;
     };
-  }, [setStore]);
+  }, [setActionLock, setStore]);
 
   useEffect(() => {
     if (!profileHydratedRef.current) return;
+    const nextStore = coerceStoreShape(store);
+    const nextJson = JSON.stringify(nextStore);
+    if (nextJson === latestPersistedJsonRef.current) return;
 
-    void saveStoreSettingsPatch({
-      deliveryBoardState: coerceStoreShape(store)
-    }).catch((error) => {
-      console.error('Falha ao salvar Delivery Board no perfil da loja', error);
-    });
-  }, [store]);
+    beginSaveLock();
+    queuedStoreRef.current = nextStore;
+    void flushSaveQueue();
+  }, [beginSaveLock, flushSaveQueue, store]);
+
+  useEffect(() => {
+    return () => {
+      if (lockActivationTimerRef.current) {
+        window.clearTimeout(lockActivationTimerRef.current);
+      }
+      if (unlockTimerRef.current) {
+        window.clearTimeout(unlockTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const hasData = (store?.motoboys?.length || store?.viagens?.length || store?.entregas?.length);
@@ -94,16 +195,19 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
   }, [setStore, store]);
 
   const addMotoboy = useCallback((nome) => {
+    assertCanMutate();
     const motoboy = domain.createMotoboy(nome);
     setStore((prev) => domain.addMotoboyToStore(prev || emptyStore, motoboy));
     return motoboy;
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const removeMotoboy = useCallback((motoboyId, options = { cascade: false }) => {
+    assertCanMutate();
     setStore((prev) => domain.removeMotoboy(prev || emptyStore, motoboyId, options));
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const openViagem = useCallback((motoboyId, opts = {}) => {
+    assertCanMutate();
     let created = null;
     setStore((prev) => {
       const current = prev || emptyStore;
@@ -113,25 +217,28 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
       return domain.addViagemToStore(current, created);
     });
     return created;
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const closeViagem = useCallback((viagemId, opts = {}) => {
+    assertCanMutate();
     setStore((prev) => {
       const current = prev || emptyStore;
       const viagens = (current.viagens || []).map((v) => (v.id === viagemId ? domain.closeViagem(v, opts) : v));
       return { ...current, viagens };
     });
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const reopenViagem = useCallback((viagemId) => {
+    assertCanMutate();
     setStore((prev) => {
       const current = prev || emptyStore;
       const viagens = (current.viagens || []).map((v) => (v.id === viagemId ? domain.reopenViagem(v) : v));
       return { ...current, viagens };
     });
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const addEntrega = useCallback((viagemId, numeroPedido, opts = {}) => {
+    assertCanMutate();
     let created = null;
     setStore((prev) => {
       const current = prev || emptyStore;
@@ -142,9 +249,10 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
       return domain.addEntregaToStore(current, created);
     });
     return created;
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const addEntregasBulk = useCallback((viagemId, pedidos = [], opts = {}) => {
+    assertCanMutate();
     const created = [];
     setStore((prev) => {
       const current = prev || emptyStore;
@@ -160,9 +268,10 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
       return updatedStore;
     });
     return created;
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const addEntregasDetailed = useCallback((viagemId, items = []) => {
+    assertCanMutate();
     const created = [];
     setStore((prev) => {
       const current = prev || emptyStore;
@@ -181,27 +290,31 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
       return updatedStore;
     });
     return created;
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const removeViagem = useCallback((viagemId, options = { cascade: true }) => {
+    assertCanMutate();
     setStore((prev) => domain.removeViagemFromStore(prev || emptyStore, viagemId, options));
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const updateEntrega = useCallback((entregaId, changes = {}) => {
+    assertCanMutate();
     setStore((prev) => {
       const current = prev || emptyStore;
       return { ...current, entregas: domain.updateEntrega(current.entregas || [], entregaId, changes) };
     });
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const updateViagem = useCallback((viagemId, changes = {}) => {
+    assertCanMutate();
     setStore((prev) => {
       const current = prev || emptyStore;
       return { ...current, viagens: domain.updateViagem(current.viagens || [], viagemId, changes) };
     });
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const moveEntrega = useCallback((entregaId, targetViagemId) => {
+    assertCanMutate();
     setStore((prev) => {
       const current = prev || emptyStore;
       const viagemDestino = (current.viagens || []).find((v) => v.id === targetViagemId);
@@ -212,30 +325,37 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
         entregas: domain.updateEntrega(current.entregas || [], entregaId, { viagemId: targetViagemId }),
       };
     });
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const setEntregaEntregue = useCallback((entregaId) => {
+    assertCanMutate();
     setStore((prev) => {
       const current = prev || emptyStore;
       return { ...current, entregas: domain.updateEntregaStatus(current.entregas || [], entregaId, 'entregue') };
     });
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const removeEntrega = useCallback((entregaId) => {
+    assertCanMutate();
     setStore((prev) => domain.removeEntregaFromStore(prev || emptyStore, entregaId));
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const findEntregas = useCallback((numeroPedido) => {
     return domain.findEntregasByNumero(store?.entregas || [], numeroPedido);
   }, [store?.entregas]);
 
-  const clearStore = useCallback(() => setStore({ ...emptyStore }), [setStore]);
+  const clearStore = useCallback(() => {
+    assertCanMutate();
+    setStore({ ...emptyStore });
+  }, [assertCanMutate, setStore]);
 
   const replaceStore = useCallback((incomingStore) => {
+    assertCanMutate();
     setStore(() => coerceStoreShape(incomingStore));
-  }, [setStore]);
+  }, [assertCanMutate, setStore]);
 
   const reconcileHubOrders = useCallback((sharedOrders = []) => {
+    if (isActionLockedRef.current) return;
     setStore((prev) => {
       const current = prev || emptyStore;
       const nextEntregas = reconcileEntregasWithSharedOrders(current.entregas || [], sharedOrders);
@@ -284,6 +404,8 @@ export function useDeliveryBoard(storageKey = 'deliveryBoardV2') {
     // raw store access (if needed)
     store,
     setStore,
+    isActionLocked,
+    saveError,
   };
 }
 
