@@ -12,7 +12,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGIN
-        value: https://lordcarvel.github.io
+        value: https://lordcarvel.github.io,easyhub://app
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY

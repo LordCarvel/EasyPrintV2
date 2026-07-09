@@ -25,7 +25,7 @@ Nao coloque a service role key em GitHub Pages, `VITE_*`, codigo frontend ou com
 3. Preencha os secrets marcados como `sync: false`:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-4. Confirme `CORS_ORIGIN=https://lordcarvel.github.io`.
+4. Confirme `CORS_ORIGIN=https://lordcarvel.github.io,easyhub://app`.
 5. Depois do deploy, teste:
 
 ```bash

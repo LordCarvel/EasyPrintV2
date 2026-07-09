@@ -5,23 +5,47 @@ import { parseIfoodOrder, routeOrder } from './lib/routing-core.js';
 
 const PORT = Number(process.env.PORT || process.env.ROUTING_API_PORT || 3333);
 const HOST = process.env.ROUTING_API_HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
-const CORS_ORIGIN = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || '*';
+const CONFIGURED_CORS_ORIGIN = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || '*';
+const DESKTOP_CORS_ORIGINS = ['easyhub://app'];
 const dataStore = await createDataStore();
 
-const jsonHeaders = {
-  'Content-Type': 'application/json; charset=utf-8',
-  'Access-Control-Allow-Origin': CORS_ORIGIN,
-  'Access-Control-Allow-Methods': 'GET,POST,PATCH,PUT,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type,X-Current-Store-Id,X-Session-Token'
+const parseCorsOrigins = (value) =>
+  String(value || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+const configuredCorsOrigins = parseCorsOrigins(CONFIGURED_CORS_ORIGIN);
+const allowAllCorsOrigins = configuredCorsOrigins.includes('*');
+const allowedCorsOrigins = new Set([
+  ...configuredCorsOrigins.filter((origin) => origin !== '*'),
+  ...DESKTOP_CORS_ORIGINS
+]);
+
+const getCorsOrigin = (request) => {
+  const requestOrigin = String(request.headers.origin || '').trim();
+  if (allowAllCorsOrigins) return requestOrigin || '*';
+  if (requestOrigin && allowedCorsOrigins.has(requestOrigin)) return requestOrigin;
+  return configuredCorsOrigins[0] || '*';
 };
 
-const sendJson = (response, status, payload) => {
-  response.writeHead(status, jsonHeaders);
+const getJsonHeaders = (request) => {
+  return {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': getCorsOrigin(request),
+    'Access-Control-Allow-Methods': 'GET,POST,PATCH,PUT,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,X-Current-Store-Id,X-Session-Token',
+    'Vary': 'Origin'
+  };
+};
+
+const sendJson = (request, response, status, payload) => {
+  response.writeHead(status, getJsonHeaders(request));
   response.end(JSON.stringify(payload));
 };
 
-const sendError = (response, status, message, details = {}) => {
-  sendJson(response, status, { error: message, ...details });
+const sendError = (request, response, status, message, details = {}) => {
+  sendJson(request, response, status, { error: message, ...details });
 };
 
 const readJsonBody = async (request) => {
@@ -60,13 +84,13 @@ const requireCurrentStore = async (request, response) => {
   const token = getSessionToken(request);
 
   if (!token) {
-    sendError(response, 401, 'Entre com usuario e senha da loja para continuar.');
+    sendError(request, response, 401, 'Entre com usuario e senha da loja para continuar.');
     return null;
   }
 
   const store = await dataStore.getSessionStore(token);
   if (!store) {
-    sendError(response, 401, 'Sessao expirada. Entre novamente com usuario e senha da loja.');
+    sendError(request, response, 401, 'Sessao expirada. Entre novamente com usuario e senha da loja.');
     return null;
   }
 
@@ -114,14 +138,14 @@ const routeForCurrentStore = async (currentStore, rawText) => {
   return { parsedData, routeResult, allowedTargets };
 };
 
-const ensureOrderAccess = (order, currentStore, response) => {
+const ensureOrderAccess = (request, order, currentStore, response) => {
   if (!order) {
-    sendError(response, 404, 'Pedido nao encontrado.');
+    sendError(request, response, 404, 'Pedido nao encontrado.');
     return false;
   }
 
   if (order.sourceStoreId !== currentStore.id && order.targetStoreId !== currentStore.id) {
-    sendError(response, 403, 'Esta loja nao tem acesso a esse pedido.');
+    sendError(request, response, 403, 'Esta loja nao tem acesso a esse pedido.');
     return false;
   }
 
@@ -130,7 +154,7 @@ const ensureOrderAccess = (order, currentStore, response) => {
 
 const handleSetupStores = async (request, response) => {
   if (request.method === 'GET') {
-    sendJson(response, 200, { stores: await dataStore.listStores() });
+    sendJson(request, response, 200, { stores: await dataStore.listStores() });
     return true;
   }
 
@@ -147,7 +171,7 @@ const handleSetupStores = async (request, response) => {
       autoPrint: false
     });
     await dataStore.connectStoreToAll(created.id);
-    sendJson(response, 201, { store: created });
+    sendJson(request, response, 201, { store: created });
     return true;
   }
 
@@ -161,11 +185,11 @@ const handleAuthLogin = async (request, response) => {
   const session = await dataStore.loginStore(body.username, body.password);
 
   if (!session) {
-    sendError(response, 401, 'Usuario ou senha da loja invalidos.');
+    sendError(request, response, 401, 'Usuario ou senha da loja invalidos.');
     return true;
   }
 
-  sendJson(response, 200, session);
+  sendJson(request, response, 200, session);
   return true;
 };
 
@@ -174,7 +198,7 @@ const handleAuthLogout = async (request, response) => {
 
   const token = getSessionToken(request);
   if (token) await dataStore.logoutSession(token);
-  sendJson(response, 200, { ok: true });
+  sendJson(request, response, 200, { ok: true });
   return true;
 };
 
@@ -183,7 +207,7 @@ const handleMe = async (request, response) => {
   if (!currentStore) return true;
 
   if (request.method === 'GET') {
-    sendJson(response, 200, await buildMePayload(currentStore));
+    sendJson(request, response, 200, await buildMePayload(currentStore));
     return true;
   }
 
@@ -208,7 +232,7 @@ const handleMyStore = async (request, response) => {
     autoPrint: body.autoPrint
   });
 
-  sendJson(response, 200, { store: updated });
+  sendJson(request, response, 200, { store: updated });
   return true;
 };
 
@@ -217,14 +241,14 @@ const handleStoreSettings = async (request, response) => {
   if (!currentStore) return true;
 
   if (request.method === 'GET') {
-    sendJson(response, 200, { settings: await dataStore.getStoreSettings(currentStore.id) });
+    sendJson(request, response, 200, { settings: await dataStore.getStoreSettings(currentStore.id) });
     return true;
   }
 
   if (request.method === 'PATCH') {
     const body = await readJsonBody(request);
     const settings = await dataStore.updateStoreSettings(currentStore.id, body);
-    sendJson(response, 200, { settings });
+    sendJson(request, response, 200, { settings });
     return true;
   }
 
@@ -239,13 +263,13 @@ const handleConnection = async (request, response, targetStoreId) => {
 
   const targetStore = await dataStore.getStore(targetStoreId);
   if (!targetStore) {
-    sendError(response, 404, 'Loja destino nao encontrada.');
+    sendError(request, response, 404, 'Loja destino nao encontrada.');
     return true;
   }
 
   const body = await readJsonBody(request);
   const connection = await dataStore.upsertConnection(currentStore.id, targetStoreId, Boolean(body.canSendOrders));
-  sendJson(response, 200, { connection, allowedTargets: await dataStore.listAllowedTargets(currentStore.id) });
+  sendJson(request, response, 200, { connection, allowedTargets: await dataStore.listAllowedTargets(currentStore.id) });
   return true;
 };
 
@@ -258,7 +282,7 @@ const handleParseRoute = async (request, response) => {
   const body = await readJsonBody(request);
   const rawText = String(body.rawText || '');
   const result = await routeForCurrentStore(currentStore, rawText);
-  sendJson(response, 200, result);
+  sendJson(request, response, 200, result);
   return true;
 };
 
@@ -273,24 +297,24 @@ const handleCreateOrder = async (request, response) => {
   const targetStoreId = String(body.targetStoreId || '').trim();
 
   if (!rawText) {
-    sendError(response, 400, 'Cole um pedido antes de enviar.');
+    sendError(request, response, 400, 'Cole um pedido antes de enviar.');
     return true;
   }
 
   if (!targetStoreId) {
-    sendError(response, 400, 'Escolha a loja de destino.');
+    sendError(request, response, 400, 'Escolha a loja de destino.');
     return true;
   }
 
   if (!(await dataStore.canSendToStore(currentStore.id, targetStoreId))) {
-    sendError(response, 403, 'Esta loja nao esta liberada para receber pedidos da sua loja.');
+    sendError(request, response, 403, 'Esta loja nao esta liberada para receber pedidos da sua loja.');
     return true;
   }
 
   const { parsedData, routeResult } = await routeForCurrentStore(currentStore, rawText);
 
   if (routeResult.requiresReview && !body.routeConfirmed) {
-    sendError(response, 409, 'Confira a regiao antes de enviar esse pedido.', {
+    sendError(request, response, 409, 'Confira a regiao antes de enviar esse pedido.', {
       requiresReview: true,
       routeResult,
       parsedData
@@ -306,7 +330,7 @@ const handleCreateOrder = async (request, response) => {
     targetStoreId
   });
 
-  sendJson(response, order.isResend ? 200 : 201, {
+  sendJson(request, response, order.isResend ? 200 : 201, {
     order,
     duplicate: Boolean(order.isResend),
     message: order.isResend
@@ -323,12 +347,12 @@ const handleOrdersCollection = async (request, response, kind) => {
   if (request.method !== 'GET') return false;
 
   if (kind === 'received') {
-    sendJson(response, 200, { orders: await dataStore.listReceivedOrders(currentStore.id) });
+    sendJson(request, response, 200, { orders: await dataStore.listReceivedOrders(currentStore.id) });
     return true;
   }
 
   if (kind === 'sent') {
-    sendJson(response, 200, { orders: await dataStore.listSentOrders(currentStore.id) });
+    sendJson(request, response, 200, { orders: await dataStore.listSentOrders(currentStore.id) });
     return true;
   }
 
@@ -340,33 +364,33 @@ const handleOrderById = async (request, response, orderId, action) => {
   if (!currentStore) return true;
 
   const order = await dataStore.getOrder(orderId);
-  if (!ensureOrderAccess(order, currentStore, response)) return true;
+  if (!ensureOrderAccess(request, order, currentStore, response)) return true;
 
   if (!action && request.method === 'GET') {
-    sendJson(response, 200, { order, events: await dataStore.listOrderEvents(order.id) });
+    sendJson(request, response, 200, { order, events: await dataStore.listOrderEvents(order.id) });
     return true;
   }
 
   if (action === 'view' && request.method === 'POST') {
     if (order.targetStoreId !== currentStore.id) {
-      sendError(response, 403, 'Apenas a loja destino pode marcar o pedido como visto.');
+      sendError(request, response, 403, 'Apenas a loja destino pode marcar o pedido como visto.');
       return true;
     }
-    sendJson(response, 200, { order: await dataStore.markOrderViewed(order.id) });
+    sendJson(request, response, 200, { order: await dataStore.markOrderViewed(order.id) });
     return true;
   }
 
   if (action === 'printed' && request.method === 'POST') {
     if (order.targetStoreId !== currentStore.id) {
-      sendError(response, 403, 'Apenas a loja destino pode marcar o pedido como impresso.');
+      sendError(request, response, 403, 'Apenas a loja destino pode marcar o pedido como impresso.');
       return true;
     }
-    sendJson(response, 200, { order: await dataStore.markOrderPrinted(order.id) });
+    sendJson(request, response, 200, { order: await dataStore.markOrderPrinted(order.id) });
     return true;
   }
 
   if (action === 'cancel' && request.method === 'POST') {
-    sendJson(response, 200, { order: await dataStore.cancelOrder(order.id) });
+    sendJson(request, response, 200, { order: await dataStore.cancelOrder(order.id) });
     return true;
   }
 
@@ -375,7 +399,7 @@ const handleOrderById = async (request, response, orderId, action) => {
 
 const handleRequest = async (request, response) => {
   if (request.method === 'OPTIONS') {
-    response.writeHead(204, jsonHeaders);
+    response.writeHead(204, getJsonHeaders(request));
     response.end();
     return;
   }
@@ -385,7 +409,7 @@ const handleRequest = async (request, response) => {
 
   try {
     if (pathname === '/health') {
-      sendJson(response, 200, { ok: true });
+      sendJson(request, response, 200, { ok: true });
       return;
     }
 
@@ -399,14 +423,14 @@ const handleRequest = async (request, response) => {
     if (pathname === '/api/stores' && request.method === 'GET') {
       const currentStore = await requireCurrentStore(request, response);
       if (!currentStore) return;
-      sendJson(response, 200, { stores: await dataStore.listStores() });
+      sendJson(request, response, 200, { stores: await dataStore.listStores() });
       return;
     }
 
     if (pathname === '/api/stores/targets' && request.method === 'GET') {
       const currentStore = await requireCurrentStore(request, response);
       if (!currentStore) return;
-      sendJson(response, 200, { stores: await dataStore.listAllowedTargets(currentStore.id) });
+      sendJson(request, response, 200, { stores: await dataStore.listAllowedTargets(currentStore.id) });
       return;
     }
 
@@ -426,10 +450,10 @@ const handleRequest = async (request, response) => {
       orderMatch[2] ? decodeURIComponent(orderMatch[2]) : ''
     )) return;
 
-    sendError(response, 404, 'Rota nao encontrada.');
+    sendError(request, response, 404, 'Rota nao encontrada.');
   } catch (error) {
     console.error(error);
-    sendError(response, error.statusCode || 500, error.message || 'Erro interno.');
+    sendError(request, response, error.statusCode || 500, error.message || 'Erro interno.');
   }
 };
 
