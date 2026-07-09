@@ -708,12 +708,14 @@ export const cancelOrder = async (db, orderId, expectedVersion) => {
 };
 
 export const addOrderEvent = async (db, orderId, type, message) => {
+  const now = nowIso();
   const { error } = await db.from('order_events').insert({
     id: createId('event'),
     order_id: orderId,
     type,
     message,
-    created_at: nowIso()
+    created_at: now,
+    updated_at: now
   });
   throwIfError(error);
 };
@@ -731,7 +733,8 @@ export const listOrderEvents = async (db, orderId) => {
     orderId: row.order_id,
     type: row.type,
     message: row.message,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    updatedAt: row.updated_at || row.created_at
   }));
 };
 

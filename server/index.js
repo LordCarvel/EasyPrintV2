@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { URL } from 'node:url';
 import { createDataStore } from './lib/data-store.js';
-import { parseIfoodOrder, routeOrder } from './lib/routing-core.js';
+import { ORDER_STATUS, parseIfoodOrder, routeOrder } from './lib/routing-core.js';
 
 const PORT = Number(process.env.PORT || process.env.ROUTING_API_PORT || 3333);
 const HOST = process.env.ROUTING_API_HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');

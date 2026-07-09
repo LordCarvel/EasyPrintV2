@@ -71,6 +71,7 @@ export function Home() {
   const [enableHighlight, setEnableHighlight] = useState(true);
   const [template, setTemplate] = useState(DEFAULT_PRINT_TEMPLATE);
   const [catalogEntries, setCatalogEntries] = useState(DEFAULT_CATALOG);
+  const [settingsReady, setSettingsReady] = useState(false);
   const highlightText = useMemo(() => {
     const highlighter = buildHighlighter(keywordsConfig);
     if (!enableHighlight) {
@@ -1066,6 +1067,8 @@ export function Home() {
   };
 
   useEffect(() => {
+    setSettingsReady(false);
+
     try {
       const saved = localStorage.getItem('keywords');
       if (saved) {
@@ -1122,6 +1125,9 @@ export function Home() {
       })
       .catch((error) => {
         console.warn('Usando configuracoes locais porque o perfil da loja nao carregou', error);
+      })
+      .finally(() => {
+        setSettingsReady(true);
       });
   }, []);
 
@@ -1175,6 +1181,8 @@ export function Home() {
   }, []);
 
   useEffect(() => {
+    if (!settingsReady) return;
+
     const pendingText = localStorage.getItem(PENDING_PRINT_TEXT_KEY);
     const shouldAutoPrint = localStorage.getItem(PENDING_PRINT_AUTO_KEY) === '1';
     const shouldSkipCash = localStorage.getItem(PENDING_PRINT_RESEND_KEY) === '1';
@@ -1229,7 +1237,7 @@ export function Home() {
         navigate(returnPath);
       }, jobs.length * 1200 + 700);
     }
-  }, [navigate]);
+  }, [navigate, settingsReady]);
 
   return (
     <div className="home-card">

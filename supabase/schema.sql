@@ -68,8 +68,16 @@ create table if not exists public.order_events (
   order_id text not null references public.orders(id) on delete cascade,
   type text not null,
   message text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+alter table public.order_events
+  add column if not exists updated_at timestamptz not null default now();
+
+update public.order_events
+set updated_at = coalesce(updated_at, created_at, now())
+where updated_at is null;
 
 create index if not exists order_events_order_created_idx
   on public.order_events(order_id, created_at);

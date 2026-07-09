@@ -580,10 +580,11 @@ export const cancelOrder = (db, orderId, expectedVersion) => {
 };
 
 export const addOrderEvent = (db, orderId, type, message) => {
+  const now = nowIso();
   db.prepare(`
-    INSERT INTO order_events (id, order_id, type, message, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(createId('event'), orderId, type, message, nowIso());
+    INSERT INTO order_events (id, order_id, type, message, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(createId('event'), orderId, type, message, now, now);
 };
 
 export const listOrderEvents = (db, orderId) =>
@@ -594,7 +595,8 @@ export const listOrderEvents = (db, orderId) =>
       orderId: row.order_id,
       type: row.type,
       message: row.message,
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      updatedAt: row.updated_at || row.created_at
     }));
 
 export const seedInitialData = (db) => {

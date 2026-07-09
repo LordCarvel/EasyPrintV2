@@ -18,6 +18,12 @@ Arquitetura:
 
 Nao coloque a service role key em GitHub Pages, `VITE_*`, codigo frontend ou commits.
 
+Atualizacao de banco em projeto existente:
+
+```sql
+-- Rode o conteudo de supabase/order-version-migration.sql antes de subir backend com controle de versao.
+```
+
 ## 2. Render
 
 1. Suba este repositorio para o GitHub.

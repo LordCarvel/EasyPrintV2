@@ -202,14 +202,26 @@ function ReceivedOrderMonitor() {
       if (!printableOrders.length) return;
 
       printableOrders.forEach((order) => queuedPrintIdsRef.current.add(order.id));
-      appendPendingPrintJobs(printableOrders.map((order) => ({
+      const results = await Promise.allSettled(
+        printableOrders.map((order) => routingApi.markPrinted(order.id, order.version))
+      );
+      const acceptedOrders = results
+        .map((result, index) => {
+          if (result.status === 'fulfilled') return printableOrders[index];
+          queuedPrintIdsRef.current.delete(printableOrders[index].id);
+          return null;
+        })
+        .filter(Boolean);
+
+      if (!acceptedOrders.length) return;
+
+      appendPendingPrintJobs(acceptedOrders.map((order) => ({
         text: order.rawText,
         autoPrint: true,
         skipCash: isResentOrder(order)
       })));
       window.localStorage.setItem(PENDING_PRINT_RETURN_PATH_KEY, '/roteamento');
 
-      await Promise.allSettled(printableOrders.map((order) => routingApi.markPrinted(order.id, order.version)));
       openEasyPrintRoute('/impressao-manual');
     };
 
