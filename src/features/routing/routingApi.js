@@ -3,10 +3,22 @@ export const SESSION_TOKEN_KEY = 'easyPrintRoutingSessionToken';
 
 const LOCAL_API_URL = 'http://127.0.0.1:3333';
 const RENDER_API_URL = 'https://easyprint-routing-api.onrender.com';
+const ROUTING_API_URL_OVERRIDE_KEY = 'easyPrintRoutingApiUrl';
+
+const LOCAL_API_URL_PATTERN = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/i;
+
+const isPackagedDesktopUrl = () => {
+  if (typeof window === 'undefined') return false;
+  return window.location.protocol === 'easyhub:' || window.location.protocol === 'file:';
+};
 
 const getDefaultRoutingApiUrl = () => {
-  if (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
-    return import.meta.env.VITE_ROUTING_API_URL || RENDER_API_URL;
+  if (typeof window !== 'undefined') {
+    const isGithubPagesUrl = window.location.hostname.endsWith('github.io');
+
+    if (isGithubPagesUrl || isPackagedDesktopUrl()) {
+      return import.meta.env.VITE_ROUTING_API_URL || RENDER_API_URL;
+    }
   }
 
   return import.meta.env.VITE_ROUTING_API_URL || LOCAL_API_URL;
@@ -14,7 +26,16 @@ const getDefaultRoutingApiUrl = () => {
 
 export const getRoutingApiUrl = () => {
   if (typeof window === 'undefined') return LOCAL_API_URL;
-  return window.localStorage.getItem('easyPrintRoutingApiUrl') || getDefaultRoutingApiUrl();
+
+  const storedApiUrl = window.localStorage.getItem(ROUTING_API_URL_OVERRIDE_KEY);
+  if (!storedApiUrl) return getDefaultRoutingApiUrl();
+
+  if (isPackagedDesktopUrl() && LOCAL_API_URL_PATTERN.test(storedApiUrl)) {
+    window.localStorage.removeItem(ROUTING_API_URL_OVERRIDE_KEY);
+    return getDefaultRoutingApiUrl();
+  }
+
+  return storedApiUrl;
 };
 
 export const getCurrentStoreId = () => {
