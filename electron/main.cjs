@@ -1,4 +1,4 @@
-const { app, BrowserWindow, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, net, protocol, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -60,6 +60,53 @@ function registerAppProtocol() {
     return net.fetch(pathToFileURL(targetFile).toString());
   });
 }
+
+async function printHtmlSilently(html) {
+  if (!String(html || '').trim()) {
+    throw new Error('Conteudo de impressao vazio.');
+  }
+
+  const printWindow = new BrowserWindow({
+    width: 320,
+    height: 600,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  try {
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+    await new Promise((resolve, reject) => {
+      printWindow.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+        },
+        (success, failureReason) => {
+          if (success) {
+            resolve();
+          } else {
+            reject(new Error(failureReason || 'Falha ao imprimir.'));
+          }
+        }
+      );
+    });
+  } finally {
+    if (!printWindow.isDestroyed()) {
+      printWindow.close();
+    }
+  }
+}
+
+ipcMain.handle('easyhub:print-html', async (_event, html) => {
+  await printHtmlSilently(html);
+  return { ok: true };
+});
 
 async function getAppUrl() {
   if (process.env.ELECTRON_START_URL) {

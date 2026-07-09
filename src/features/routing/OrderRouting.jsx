@@ -586,6 +586,7 @@ export function OrderRouting() {
 
     try {
       await routingApi.saveMyStore(profileForm);
+      window.dispatchEvent(new CustomEvent('storeProfileReloadRequested'));
       showFeedback('Perfil da loja salvo.');
       await loadMe();
     } catch (err) {
@@ -620,6 +621,17 @@ export function OrderRouting() {
       void showAppAlert(err.message);
     }
   };
+
+  useEffect(() => {
+    const handleReceivedOrdersUpdate = (event) => {
+      if (Array.isArray(event.detail?.orders)) {
+        setReceivedOrders(event.detail.orders);
+      }
+    };
+
+    window.addEventListener('easyhubReceivedOrdersUpdated', handleReceivedOrdersUpdate);
+    return () => window.removeEventListener('easyhubReceivedOrdersUpdated', handleReceivedOrdersUpdate);
+  }, []);
 
   const exportSentCashReport = () => {
     const rows = sentCashRows.filter((row) => !row.canceled && !row.duplicateCashEntry);
@@ -791,7 +803,7 @@ export function OrderRouting() {
                 checked={profileForm.autoPrint}
                 onChange={(event) => setProfileForm((current) => ({ ...current, autoPrint: event.target.checked }))}
               />
-              Preparar impressao automatica no futuro
+              Imprimir automaticamente pedidos recebidos nesta loja
             </label>
 
             <button type="button" className="routing-primary-action" onClick={saveProfile}>

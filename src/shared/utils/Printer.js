@@ -51,6 +51,16 @@
   static printPreview(previewHtml) {
     if (!previewHtml) return;
     const html = this.generateHTMLFromPreview(previewHtml);
+    const desktopPrint = window.easyHubDesktop?.printHtml;
+
+    if (typeof desktopPrint === 'function') {
+      desktopPrint(html).catch((error) => {
+        console.error('Falha na impressao silenciosa do Electron', error);
+        this.printHTML(html);
+      });
+      return;
+    }
+
     this.printHTML(html);
   }
 }

@@ -218,6 +218,15 @@ export function StoreProfileProvider({ children }) {
     return () => window.removeEventListener('storeProfileSettingsUpdated', handleSettingsUpdate);
   }, []);
 
+  useEffect(() => {
+    const handleProfileReload = () => {
+      void reloadProfile().catch((err) => setError(err.message));
+    };
+
+    window.addEventListener('storeProfileReloadRequested', handleProfileReload);
+    return () => window.removeEventListener('storeProfileReloadRequested', handleProfileReload);
+  }, []);
+
   const logout = async () => {
     try {
       await routingApi.logout();

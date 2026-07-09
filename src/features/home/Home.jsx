@@ -1,7 +1,14 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Printer } from '../../shared/utils/Printer';
 import { buildHighlighter, escapeHtml } from '../../shared/utils/highlight';
-import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_RESEND_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
+import {
+  PENDING_PRINT_AUTO_KEY,
+  PENDING_PRINT_QUEUE_KEY,
+  PENDING_PRINT_RESEND_KEY,
+  PENDING_PRINT_RETURN_PATH_KEY,
+  PENDING_PRINT_TEXT_KEY
+} from '../../shared/routing/orderRouting';
 import { showAppAlert } from '../../shared/ui/appDialog';
 import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
 import './Home.css';
@@ -58,6 +65,7 @@ const DEFAULT_PRINT_TEMPLATE = {
 };
 
 export function Home() {
+  const navigate = useNavigate();
   const [text, setText] = useState('');
   const [keywordsConfig, setKeywordsConfig] = useState([]);
   const [enableHighlight, setEnableHighlight] = useState(true);
@@ -1168,22 +1176,60 @@ export function Home() {
 
   useEffect(() => {
     const pendingText = localStorage.getItem(PENDING_PRINT_TEXT_KEY);
-    if (!pendingText) return;
-
     const shouldAutoPrint = localStorage.getItem(PENDING_PRINT_AUTO_KEY) === '1';
     const shouldSkipCash = localStorage.getItem(PENDING_PRINT_RESEND_KEY) === '1';
-    setText(pendingText);
+    const returnPath = localStorage.getItem(PENDING_PRINT_RETURN_PATH_KEY);
+    const jobs = [];
+
+    if (pendingText) {
+      jobs.push({
+        text: pendingText,
+        autoPrint: shouldAutoPrint,
+        skipCash: shouldSkipCash
+      });
+    }
+
+    try {
+      const queuedJobs = JSON.parse(localStorage.getItem(PENDING_PRINT_QUEUE_KEY) || '[]');
+      if (Array.isArray(queuedJobs)) {
+        queuedJobs.forEach((job) => {
+          if (!job?.text) return;
+          jobs.push({
+            text: String(job.text),
+            autoPrint: job.autoPrint !== false,
+            skipCash: Boolean(job.skipCash)
+          });
+        });
+      }
+    } catch {
+      localStorage.removeItem(PENDING_PRINT_QUEUE_KEY);
+    }
+
+    if (!jobs.length) return;
+
+    setText(jobs[0].text);
     localStorage.removeItem(PENDING_PRINT_TEXT_KEY);
     localStorage.removeItem(PENDING_PRINT_AUTO_KEY);
     localStorage.removeItem(PENDING_PRINT_RESEND_KEY);
+    localStorage.removeItem(PENDING_PRINT_QUEUE_KEY);
+    localStorage.removeItem(PENDING_PRINT_RETURN_PATH_KEY);
     textareaRef.current?.focus();
 
-    if (shouldAutoPrint) {
+    jobs.forEach((job, index) => {
       window.setTimeout(() => {
-        printText(pendingText, { skipCash: shouldSkipCash });
-      }, 0);
+        setText(job.text);
+        if (job.autoPrint) {
+          printText(job.text, { skipCash: job.skipCash });
+        }
+      }, index * 1200);
+    });
+
+    if (returnPath) {
+      window.setTimeout(() => {
+        navigate(returnPath);
+      }, jobs.length * 1200 + 700);
     }
-  }, []);
+  }, [navigate]);
 
   return (
     <div className="home-card">

@@ -252,6 +252,39 @@
   font-weight: 700;
 }
 
+.received-order-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 7000;
+  width: min(320px, calc(100vw - 36px));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid #b8d4c0;
+  border-radius: 8px;
+  background: #f1fbf4;
+  color: #171717;
+  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.18);
+}
+
+.received-order-toast strong {
+  color: #176c3a;
+  font-size: 0.94rem;
+}
+
+.received-order-toast span,
+.received-order-toast small {
+  color: #4b5563;
+  line-height: 1.35;
+}
+
+.received-order-toast small {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .project-hub.sidebar-collapsed .project-sidebar {
   align-items: center;
   padding: 0.6rem 0.44rem;
