@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../../shared/ui/Icon';
 import { confirmAction, showAppAlert } from '../../shared/ui/appDialog';
-import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_RESEND_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
 import { clearCurrentStoreId, getCurrentStoreId, getSessionToken, routingApi, setAuthSession } from './routingApi';
+import { printRoutedOrderText } from './directOrderPrint';
 import { formatCurrency, parseIfoodFinancial } from '../../../shared/routing/ifoodFinancial';
 import './OrderRouting.css';
 
@@ -497,17 +497,18 @@ export function OrderRouting() {
     }
   };
 
-  const printCurrentOrder = () => {
+  const printCurrentOrder = async () => {
     const rawText = orderText.trim();
     if (!rawText) {
       void showAppAlert('Cole um pedido antes de imprimir.');
       return;
     }
 
-    localStorage.setItem(PENDING_PRINT_TEXT_KEY, rawText);
-    localStorage.setItem(PENDING_PRINT_AUTO_KEY, '1');
-    localStorage.removeItem(PENDING_PRINT_RESEND_KEY);
-    navigate('/impressao-manual');
+    try {
+      await printRoutedOrderText(rawText);
+    } catch (err) {
+      void showAppAlert(err.message || 'Falha ao imprimir pedido.', { tone: 'danger' });
+    }
   };
 
   const sendOrder = async (confirmedByModal = false) => {
@@ -612,6 +613,31 @@ export function OrderRouting() {
         await loadOrders();
       }
       void showAppAlert(err.message);
+    }
+  };
+
+  const printReceivedOrder = async (order) => {
+    if (!order?.rawText) {
+      void showAppAlert('Esse pedido nao tem texto bruto salvo para imprimir.');
+      return;
+    }
+
+    try {
+      const payload = await routingApi.markPrinted(order.id, order.version);
+      await printRoutedOrderText(order.rawText, {
+        skipCash: isResentOrder(order)
+      });
+      if (payload.order) {
+        setReceivedOrders((current) =>
+          current.map((item) => (item.id === payload.order.id ? payload.order : item))
+        );
+      }
+      await loadOrders();
+    } catch (err) {
+      if (err.status === 409) {
+        await loadOrders();
+      }
+      void showAppAlert(err.message || 'Falha ao imprimir pedido.', { tone: 'danger' });
     }
   };
 
@@ -997,9 +1023,9 @@ export function OrderRouting() {
               </span>
 
               <div className="routing-order-actions">
-                <button type="button" onClick={() => navigate(`/roteamento/imprimir/${order.id}`)}>
+                <button type="button" onClick={() => printReceivedOrder(order)}>
                   <Icon name="print" size={14} />
-                  Abrir/Imprimir
+                  Imprimir
                 </button>
                 {type === 'received' ? (
                   <button type="button" className="secondary" onClick={() => markPrinted(order)}>

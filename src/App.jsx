@@ -2,9 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './shared/ui/Icon';
 import { StoreProfileProvider, useStoreProfile } from './shared/storeProfile/StoreProfileContext';
 import { routingApi } from './features/routing/routingApi';
-import { createReceiptPrintEngine } from './features/home/receiptPrintEngine';
-import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from './features/routing/storeSettingsClient';
-import { Printer } from './shared/utils/Printer';
+import { isResentOrder, printRoutedOrderText } from './features/routing/directOrderPrint';
 import { showAppAlert } from './shared/ui/appDialog';
 import './App.css';
 import './shared/ui/appDialog.css';
@@ -73,8 +71,6 @@ const RECEIVED_ORDER_POLL_INTERVAL_MS = 3000;
 const RECEIVED_ORDER_TOAST_MS = 6500;
 const AUTO_PRINT_JOB_DELAY_MS = 1200;
 
-const isResentOrder = (order = {}) => Boolean(order.isResend || order.status === 'reenviado');
-
 const getOrderNumber = (order = {}) =>
   String(order.orderNumber || order.parsedData?.orderNumber || order.parsedData?.locator || 'Pedido').trim();
 
@@ -132,103 +128,6 @@ const playReceivedOrderSound = () => {
 const delay = (ms) => new Promise((resolve) => {
   window.setTimeout(resolve, ms);
 });
-
-const readLocalJson = (key, fallback) => {
-  try {
-    const value = JSON.parse(window.localStorage.getItem(key) || 'null');
-    return value ?? fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const loadPrintSettingsSnapshot = async () => {
-  try {
-    return await hydrateLocalSettingsFromStore();
-  } catch (error) {
-    console.warn('Usando configuracoes locais para impressao automatica', error);
-    return {
-      keywords: readLocalJson('keywords', []),
-      catalogs: readLocalJson('catalogs', []),
-      printTemplate: readLocalJson('template', {}),
-      cashOrders: readLocalJson('cashOrders', []),
-      cashProcessed: readLocalJson('cashProcessed', [])
-    };
-  }
-};
-
-const persistAutoPrintCashOrder = async ({ orderNumber, customerName, totalValue, paymentMethod }, options = {}) => {
-  const normalizedOrderNumber = String(orderNumber || '').trim();
-  if (!normalizedOrderNumber) return null;
-
-  if (options.skipCash) {
-    void showAppAlert(`Atencao: o pedido #${normalizedOrderNumber} foi reenviado e nao sera lancado novamente no caixa.`);
-    return {
-      alreadyProcessed: true,
-      skippedCash: true
-    };
-  }
-
-  const storedOrders = readLocalJson('cashOrders', []);
-  const storedProcessed = readLocalJson('cashProcessed', []);
-  const safeOrders = Array.isArray(storedOrders) ? storedOrders : [];
-  const safeProcessed = Array.isArray(storedProcessed) ? storedProcessed : [];
-  const existingEntry = safeOrders.find((order) =>
-    String(order?.orderNumber || order?.id || '').trim() === normalizedOrderNumber
-  );
-  const alreadyProcessed = safeProcessed.includes(normalizedOrderNumber) || Boolean(existingEntry);
-
-  const newEntry = {
-    id: normalizedOrderNumber,
-    orderNumber: normalizedOrderNumber,
-    customer: customerName,
-    total: totalValue,
-    paymentMethod,
-    timestamp: new Date().toLocaleTimeString('pt-BR'),
-    date: new Date().toLocaleDateString('pt-BR'),
-    isReprint: alreadyProcessed
-  };
-
-  if (alreadyProcessed) {
-    const updatedProcessed = safeProcessed.includes(normalizedOrderNumber)
-      ? safeProcessed
-      : [...safeProcessed, normalizedOrderNumber];
-
-    if (updatedProcessed !== safeProcessed) {
-      window.localStorage.setItem('cashProcessed', JSON.stringify(updatedProcessed));
-      await saveStoreSettingsPatch({
-        cashOrders: safeOrders,
-        cashProcessed: updatedProcessed
-      });
-    }
-
-    void showAppAlert(`Atencao: o pedido #${normalizedOrderNumber} ja estava no caixa e nao foi lancado novamente.`);
-    return {
-      alreadyProcessed: true,
-      entry: existingEntry || newEntry
-    };
-  }
-
-  const updatedOrders = [...safeOrders, newEntry];
-  const updatedProcessed = [...safeProcessed, normalizedOrderNumber];
-
-  window.localStorage.setItem('cashOrders', JSON.stringify(updatedOrders));
-  window.localStorage.setItem('cashProcessed', JSON.stringify(updatedProcessed));
-  await saveStoreSettingsPatch({
-    cashOrders: updatedOrders,
-    cashProcessed: updatedProcessed
-  });
-  window.dispatchEvent(
-    new CustomEvent('registerOrder', {
-      detail: newEntry
-    })
-  );
-
-  return {
-    alreadyProcessed,
-    entry: newEntry
-  };
-};
 
 function ReceivedOrderMonitor() {
   const { store } = useStoreProfile();
@@ -301,19 +200,10 @@ function ReceivedOrderMonitor() {
 
       if (!acceptedOrders.length) return;
 
-      const settings = await loadPrintSettingsSnapshot();
-      const printEngine = createReceiptPrintEngine({
-        keywords: settings.keywords,
-        catalogs: settings.catalogs,
-        template: settings.printTemplate
-      });
-
       for (let index = 0; index < acceptedOrders.length; index += 1) {
         const order = acceptedOrders[index];
         try {
-          const job = printEngine.buildPrintJob(order.rawText);
-          Printer.printPreview(job.html);
-          await persistAutoPrintCashOrder(job.cash, {
+          await printRoutedOrderText(order.rawText, {
             skipCash: isResentOrder(order)
           });
         } catch (error) {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Icon } from '../../shared/ui/Icon';
 import { showAppAlert } from '../../shared/ui/appDialog';
-import { PENDING_PRINT_AUTO_KEY, PENDING_PRINT_RESEND_KEY, PENDING_PRINT_TEXT_KEY } from '../../shared/routing/orderRouting';
+import { isResentOrder, printRoutedOrderText } from './directOrderPrint';
 import { routingApi } from './routingApi';
 import './OrderRouting.css';
 
@@ -45,6 +45,9 @@ export function RoutingPrintOrder() {
     try {
       const payload = await routingApi.markPrinted(orderId, order.version);
       setOrder(payload.order);
+      await printRoutedOrderText(order.rawText, {
+        skipCash: isResentOrder(order)
+      });
     } catch (err) {
       if (err.status === 409) {
         const refreshed = await routingApi.getOrder(orderId);
@@ -53,17 +56,8 @@ export function RoutingPrintOrder() {
         return;
       }
       console.error('Falha ao marcar pedido como impresso', err);
+      void showAppAlert(err.message || 'Falha ao imprimir pedido.', { tone: 'danger' });
     }
-
-    localStorage.setItem(PENDING_PRINT_TEXT_KEY, order.rawText);
-    localStorage.setItem(PENDING_PRINT_AUTO_KEY, '1');
-    if (order.isResend || order.status === 'reenviado') {
-      localStorage.setItem(PENDING_PRINT_RESEND_KEY, '1');
-    } else {
-      localStorage.removeItem(PENDING_PRINT_RESEND_KEY);
-    }
-
-    navigate('/impressao-manual');
   };
 
   const parsed = order?.parsedData || {};
