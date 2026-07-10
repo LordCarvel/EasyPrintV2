@@ -714,8 +714,7 @@ export const addOrderEvent = async (db, orderId, type, message) => {
     order_id: orderId,
     type,
     message,
-    created_at: now,
-    updated_at: now
+    created_at: now
   });
   throwIfError(error);
 };

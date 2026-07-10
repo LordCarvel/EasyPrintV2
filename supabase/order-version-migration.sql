@@ -16,3 +16,5 @@ alter table public.order_events
 update public.order_events
 set updated_at = coalesce(updated_at, created_at, now())
 where updated_at is null;
+
+notify pgrst, 'reload schema';
