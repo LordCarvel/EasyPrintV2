@@ -1,7 +1,7 @@
 {
   "name": "easyprint",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Easy Hub desktop app",
   "author": "LordCarvel",
   "type": "module",
@@ -20,6 +20,7 @@
     "electron": "node ./scripts/run-electron-dev.cjs",
     "electron:prod": "npm run build:desktop && electron .",
     "installer": "npm run build:desktop && electron-builder --win nsis --x64",
+    "release:win": "npm run build:desktop && electron-builder --win nsis --x64 --publish always",
     "dist:win": "npm run installer",
     "preview": "vite preview",
     "predeploy": "npm run build",
@@ -30,6 +31,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",
+    "electron-updater": "^6.8.9",
     "html2canvas": "^1.4.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -57,6 +59,13 @@
     ],
     "asar": true,
     "npmRebuild": false,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "LordCarvel",
+        "repo": "EasyPrintV2"
+      }
+    ],
     "win": {
       "target": [
         {

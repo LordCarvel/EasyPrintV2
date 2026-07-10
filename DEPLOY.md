@@ -57,7 +57,36 @@ VITE_ROUTING_API_URL=https://easyprint-routing-api.onrender.com
 4. Faca push para `main` ou `master`.
 5. O workflow `.github/workflows/deploy-pages.yml` vai rodar `npm ci`, `npm run build` e publicar `dist`.
 
-## 4. Local
+## 4. App desktop e atualizacoes
+
+A partir da versao `1.1.0`, o app instalado consegue verificar, baixar e instalar atualizacoes pelo proprio menu de conta da loja.
+
+Importante: maquinas que ainda estao em uma versao antiga sem atualizador precisam instalar manualmente uma vez o instalador `1.1.0` ou superior. Depois disso, as proximas atualizacoes entram pelo app.
+
+Para publicar uma nova versao:
+
+1. Altere `"version"` em `package.json` para uma versao maior.
+2. Faca commit e push para `main`.
+3. Crie e envie uma tag com a mesma versao:
+
+```bash
+git tag v1.1.1
+git push origin v1.1.1
+```
+
+4. O workflow `.github/workflows/release-desktop.yml` gera a release com:
+   - `EasyHub-Setup-<versao>.exe`
+   - `EasyHub-Setup-<versao>.exe.blockmap`
+   - `latest.yml`
+5. No app instalado, abra a conta da loja e use `Atualizacoes do app`.
+
+Tambem e possivel publicar localmente com `GH_TOKEN` configurado:
+
+```bash
+npm run release:win
+```
+
+## 5. Local
 
 Frontend:
 

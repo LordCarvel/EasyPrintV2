@@ -2,10 +2,9 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './shared/ui/Icon';
 import { StoreProfileProvider, useStoreProfile } from './shared/storeProfile/StoreProfileContext';
 import { routingApi } from './features/routing/routingApi';
-import {
-  PENDING_PRINT_QUEUE_KEY,
-  PENDING_PRINT_RETURN_PATH_KEY
-} from './shared/routing/orderRouting';
+import { createReceiptPrintEngine } from './features/home/receiptPrintEngine';
+import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from './features/routing/storeSettingsClient';
+import { Printer } from './shared/utils/Printer';
 import { showAppAlert } from './shared/ui/appDialog';
 import './App.css';
 import './shared/ui/appDialog.css';
@@ -72,11 +71,26 @@ function getStoreInitials(store) {
 const areaTextToInput = (value = []) => Array.isArray(value) ? value.join(', ') : String(value || '');
 const RECEIVED_ORDER_POLL_INTERVAL_MS = 3000;
 const RECEIVED_ORDER_TOAST_MS = 6500;
+const AUTO_PRINT_JOB_DELAY_MS = 1200;
 
 const isResentOrder = (order = {}) => Boolean(order.isResend || order.status === 'reenviado');
 
 const getOrderNumber = (order = {}) =>
   String(order.orderNumber || order.parsedData?.orderNumber || order.parsedData?.locator || 'Pedido').trim();
+
+const updateStatusLabels = {
+  idle: 'Pronto',
+  checking: 'Verificando',
+  available: 'Disponivel',
+  downloading: 'Baixando',
+  downloaded: 'Pronta',
+  installing: 'Instalando',
+  'not-available': 'Atualizado',
+  unsupported: 'Indisponivel',
+  error: 'Erro',
+};
+
+const getUpdateStatusLabel = (status = 'idle') => updateStatusLabels[status] || 'Pronto';
 
 const playReceivedOrderSound = () => {
   try {
@@ -115,33 +129,105 @@ const playReceivedOrderSound = () => {
   }
 };
 
-const readPendingPrintQueue = () => {
+const delay = (ms) => new Promise((resolve) => {
+  window.setTimeout(resolve, ms);
+});
+
+const readLocalJson = (key, fallback) => {
   try {
-    const queue = JSON.parse(window.localStorage.getItem(PENDING_PRINT_QUEUE_KEY) || '[]');
-    return Array.isArray(queue) ? queue : [];
+    const value = JSON.parse(window.localStorage.getItem(key) || 'null');
+    return value ?? fallback;
   } catch {
-    return [];
+    return fallback;
   }
 };
 
-const appendPendingPrintJobs = (jobs) => {
-  const queue = readPendingPrintQueue();
-  window.localStorage.setItem(PENDING_PRINT_QUEUE_KEY, JSON.stringify([...queue, ...jobs]));
+const loadPrintSettingsSnapshot = async () => {
+  try {
+    return await hydrateLocalSettingsFromStore();
+  } catch (error) {
+    console.warn('Usando configuracoes locais para impressao automatica', error);
+    return {
+      keywords: readLocalJson('keywords', []),
+      catalogs: readLocalJson('catalogs', []),
+      printTemplate: readLocalJson('template', {}),
+      cashOrders: readLocalJson('cashOrders', []),
+      cashProcessed: readLocalJson('cashProcessed', [])
+    };
+  }
 };
 
-const openEasyPrintRoute = (route) => {
-  window.localStorage.setItem(activeProjectKey, 'easy-print');
-  window.localStorage.setItem(getProjectHashKey('easy-print'), route);
+const persistAutoPrintCashOrder = async ({ orderNumber, customerName, totalValue, paymentMethod }, options = {}) => {
+  const normalizedOrderNumber = String(orderNumber || '').trim();
+  if (!normalizedOrderNumber) return null;
 
-  const nextUrl = new URL(window.location.href);
-  nextUrl.searchParams.set('project', 'easy-print');
-  nextUrl.hash = route;
-
-  if (nextUrl.toString() === window.location.href) {
-    window.location.hash = route;
-  } else {
-    window.location.assign(nextUrl.toString());
+  if (options.skipCash) {
+    void showAppAlert(`Atencao: o pedido #${normalizedOrderNumber} foi reenviado e nao sera lancado novamente no caixa.`);
+    return {
+      alreadyProcessed: true,
+      skippedCash: true
+    };
   }
+
+  const storedOrders = readLocalJson('cashOrders', []);
+  const storedProcessed = readLocalJson('cashProcessed', []);
+  const safeOrders = Array.isArray(storedOrders) ? storedOrders : [];
+  const safeProcessed = Array.isArray(storedProcessed) ? storedProcessed : [];
+  const existingEntry = safeOrders.find((order) =>
+    String(order?.orderNumber || order?.id || '').trim() === normalizedOrderNumber
+  );
+  const alreadyProcessed = safeProcessed.includes(normalizedOrderNumber) || Boolean(existingEntry);
+
+  const newEntry = {
+    id: normalizedOrderNumber,
+    orderNumber: normalizedOrderNumber,
+    customer: customerName,
+    total: totalValue,
+    paymentMethod,
+    timestamp: new Date().toLocaleTimeString('pt-BR'),
+    date: new Date().toLocaleDateString('pt-BR'),
+    isReprint: alreadyProcessed
+  };
+
+  if (alreadyProcessed) {
+    const updatedProcessed = safeProcessed.includes(normalizedOrderNumber)
+      ? safeProcessed
+      : [...safeProcessed, normalizedOrderNumber];
+
+    if (updatedProcessed !== safeProcessed) {
+      window.localStorage.setItem('cashProcessed', JSON.stringify(updatedProcessed));
+      await saveStoreSettingsPatch({
+        cashOrders: safeOrders,
+        cashProcessed: updatedProcessed
+      });
+    }
+
+    void showAppAlert(`Atencao: o pedido #${normalizedOrderNumber} ja estava no caixa e nao foi lancado novamente.`);
+    return {
+      alreadyProcessed: true,
+      entry: existingEntry || newEntry
+    };
+  }
+
+  const updatedOrders = [...safeOrders, newEntry];
+  const updatedProcessed = [...safeProcessed, normalizedOrderNumber];
+
+  window.localStorage.setItem('cashOrders', JSON.stringify(updatedOrders));
+  window.localStorage.setItem('cashProcessed', JSON.stringify(updatedProcessed));
+  await saveStoreSettingsPatch({
+    cashOrders: updatedOrders,
+    cashProcessed: updatedProcessed
+  });
+  window.dispatchEvent(
+    new CustomEvent('registerOrder', {
+      detail: newEntry
+    })
+  );
+
+  return {
+    alreadyProcessed,
+    entry: newEntry
+  };
 };
 
 function ReceivedOrderMonitor() {
@@ -188,7 +274,7 @@ function ReceivedOrderMonitor() {
       }, RECEIVED_ORDER_TOAST_MS);
     };
 
-    const queueAutoPrint = async (orders) => {
+    const autoPrintReceivedOrders = async (orders) => {
       if (!store.autoPrint) return;
 
       const printableOrders = orders.filter((order) => (
@@ -215,14 +301,30 @@ function ReceivedOrderMonitor() {
 
       if (!acceptedOrders.length) return;
 
-      appendPendingPrintJobs(acceptedOrders.map((order) => ({
-        text: order.rawText,
-        autoPrint: true,
-        skipCash: isResentOrder(order)
-      })));
-      window.localStorage.setItem(PENDING_PRINT_RETURN_PATH_KEY, '/roteamento');
+      const settings = await loadPrintSettingsSnapshot();
+      const printEngine = createReceiptPrintEngine({
+        keywords: settings.keywords,
+        catalogs: settings.catalogs,
+        template: settings.printTemplate
+      });
 
-      openEasyPrintRoute('/impressao-manual');
+      for (let index = 0; index < acceptedOrders.length; index += 1) {
+        const order = acceptedOrders[index];
+        try {
+          const job = printEngine.buildPrintJob(order.rawText);
+          Printer.printPreview(job.html);
+          await persistAutoPrintCashOrder(job.cash, {
+            skipCash: isResentOrder(order)
+          });
+        } catch (error) {
+          console.error('Falha na impressao automatica do pedido recebido', error);
+          void showAppAlert(error.message || 'Falha na impressao automatica do pedido recebido.', { tone: 'danger' });
+        }
+
+        if (index < acceptedOrders.length - 1) {
+          await delay(AUTO_PRINT_JOB_DELAY_MS);
+        }
+      }
     };
 
     const pollReceivedOrders = async () => {
@@ -255,7 +357,7 @@ function ReceivedOrderMonitor() {
 
         playReceivedOrderSound();
         showNotice(incomingOrders);
-        await queueAutoPrint(incomingOrders);
+        await autoPrintReceivedOrders(incomingOrders);
       } catch (error) {
         console.warn('Falha ao monitorar pedidos recebidos', error);
       }
@@ -293,6 +395,16 @@ function ProjectHub() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getInitialSidebarCollapsed);
   const { store, reloadProfile, logout } = useStoreProfile();
   const [accountOpen, setAccountOpen] = useState(false);
+  const [appInfo, setAppInfo] = useState({ version: '', isPackaged: false, updateSupported: false });
+  const [updateStatus, setUpdateStatus] = useState({
+    status: 'idle',
+    appVersion: '',
+    availableVersion: '',
+    percent: 0,
+    message: '',
+    supported: false,
+  });
+  const [updateBusy, setUpdateBusy] = useState('');
   const [accountForm, setAccountForm] = useState({
     name: '',
     username: '',
@@ -320,6 +432,41 @@ function ProjectHub() {
       autoPrint: Boolean(store?.autoPrint)
     });
   }, [store]);
+
+  useEffect(() => {
+    const desktop = window.easyHubDesktop;
+    let canceled = false;
+    let unsubscribe = () => {};
+
+    if (!desktop?.updates) return unsubscribe;
+
+    if (typeof desktop.getAppInfo === 'function') {
+      desktop.getAppInfo()
+        .then((info) => {
+          if (!canceled && info) setAppInfo(info);
+        })
+        .catch((error) => {
+          console.warn('Falha ao ler versao do app', error);
+        });
+    }
+
+    desktop.updates.getStatus()
+      .then((status) => {
+        if (!canceled && status) setUpdateStatus(status);
+      })
+      .catch((error) => {
+        console.warn('Falha ao ler status de atualizacao', error);
+      });
+
+    unsubscribe = desktop.updates.onStatus((status) => {
+      if (!canceled && status) setUpdateStatus(status);
+    });
+
+    return () => {
+      canceled = true;
+      unsubscribe();
+    };
+  }, []);
 
   const handleProjectChange = (nextProjectId) => {
     if (nextProjectId === activeProject.id) return;
@@ -363,6 +510,37 @@ function ProjectHub() {
       void showAppAlert(error.message || 'Falha ao salvar a conta.', { tone: 'danger' });
     }
   };
+
+  const runUpdateAction = async (actionName) => {
+    const updates = window.easyHubDesktop?.updates;
+    const action = updates?.[actionName];
+
+    if (typeof action !== 'function') {
+      void showAppAlert('Atualizacoes automaticas estao disponiveis apenas no app instalado.', { tone: 'danger' });
+      return;
+    }
+
+    setUpdateBusy(actionName);
+
+    try {
+      const nextStatus = await action();
+      if (nextStatus) setUpdateStatus(nextStatus);
+      if (actionName === 'check' && nextStatus?.status === 'not-available') {
+        void showAppAlert('O app ja esta na versao mais recente.');
+      }
+    } catch (error) {
+      void showAppAlert(error.message || 'Falha ao executar atualizacao.', { tone: 'danger' });
+    } finally {
+      setUpdateBusy('');
+    }
+  };
+
+  const updateProgress = Math.round(Number(updateStatus.percent || 0));
+  const updateSupported = Boolean(updateStatus.supported || appInfo.updateSupported);
+  const updateCurrentVersion = appInfo.version || updateStatus.appVersion || '-';
+  const canCheckUpdate = updateSupported && !updateBusy && updateStatus.status !== 'checking' && updateStatus.status !== 'downloading' && updateStatus.status !== 'installing';
+  const canDownloadUpdate = updateSupported && !updateBusy && updateStatus.status === 'available';
+  const canInstallUpdate = updateSupported && !updateBusy && updateStatus.status === 'downloaded';
 
   return (
     <div className={`project-hub ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -418,6 +596,9 @@ function ProjectHub() {
           <span>Projeto ativo</span>
           <strong>{activeProject.name}</strong>
           <small>Perfil geral sincronizado</small>
+          <button type="button" onClick={() => setAccountOpen(true)}>
+            Atualizar app
+          </button>
           <button type="button" onClick={logout}>
             Trocar loja
           </button>
@@ -520,6 +701,68 @@ function ProjectHub() {
               />
               <span>Imprimir automaticamente pedidos recebidos nesta loja</span>
             </label>
+
+            <section className="account-update-panel" aria-live="polite">
+              <div className="account-update-header">
+                <div>
+                  <strong>Atualizacoes do app</strong>
+                  <span>Versao instalada: {updateCurrentVersion}</span>
+                </div>
+                <span className={`account-update-badge status-${updateStatus.status || 'idle'}`}>
+                  {getUpdateStatusLabel(updateStatus.status)}
+                </span>
+              </div>
+
+              <p>
+                {updateStatus.message || (updateSupported
+                  ? 'Nenhuma verificacao recente.'
+                  : 'Disponivel apenas no app instalado.')}
+              </p>
+
+              {updateStatus.availableVersion ? (
+                <small>Nova versao: {updateStatus.availableVersion}</small>
+              ) : null}
+
+              {updateStatus.status === 'downloading' ? (
+                <div className="account-update-progress" aria-label={`Baixando ${updateProgress}%`}>
+                  <span style={{ width: `${Math.max(0, Math.min(100, updateProgress))}%` }} />
+                </div>
+              ) : null}
+
+              <div className="account-update-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => runUpdateAction('check')}
+                  disabled={!canCheckUpdate}
+                >
+                  <Icon name="refresh" size={14} />
+                  <span>{updateBusy === 'check' ? 'Verificando...' : 'Verificar'}</span>
+                </button>
+
+                {updateStatus.status === 'available' ? (
+                  <button
+                    type="button"
+                    onClick={() => runUpdateAction('download')}
+                    disabled={!canDownloadUpdate}
+                  >
+                    <Icon name="download" size={14} />
+                    <span>{updateBusy === 'download' ? 'Baixando...' : 'Baixar'}</span>
+                  </button>
+                ) : null}
+
+                {updateStatus.status === 'downloaded' ? (
+                  <button
+                    type="button"
+                    onClick={() => runUpdateAction('install')}
+                    disabled={!canInstallUpdate}
+                  >
+                    <Icon name="check" size={14} />
+                    <span>Reiniciar e instalar</span>
+                  </button>
+                ) : null}
+              </div>
+            </section>
 
             <div className="account-modal-actions">
               <button type="button" className="secondary" onClick={() => setAccountOpen(false)}>

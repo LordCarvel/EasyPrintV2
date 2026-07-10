@@ -1,10 +1,27 @@
 const { app, BrowserWindow, ipcMain, net, protocol, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const APP_PROTOCOL = 'easyhub';
 const APP_HOST = 'app';
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const STARTUP_UPDATE_CHECK_DELAY_MS = 15000;
+const UPDATE_CHANNEL = 'easyhub:update-status';
+let mainWindow = null;
+let updateCheckTimer = null;
+let updaterConfigured = false;
+let updateCheckPromise = null;
+let updateState = {
+  status: 'idle',
+  appVersion: app.getVersion(),
+  availableVersion: '',
+  releaseDate: '',
+  percent: 0,
+  message: '',
+  supported: false,
+};
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -30,6 +47,142 @@ app.commandLine.appendSwitch('disk-cache-dir', cachePath);
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-gpu-compositing');
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+
+function canUseAutoUpdater() {
+  return app.isPackaged && !process.env.ELECTRON_START_URL;
+}
+
+function serializeUpdateInfo(info) {
+  if (!info) return {};
+  return {
+    availableVersion: info.version || '',
+    releaseDate: info.releaseDate || '',
+  };
+}
+
+function setUpdateState(patch = {}) {
+  updateState = {
+    ...updateState,
+    ...patch,
+    appVersion: app.getVersion(),
+    supported: canUseAutoUpdater(),
+  };
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(UPDATE_CHANNEL, updateState);
+  }
+
+  return updateState;
+}
+
+function configureAutoUpdater() {
+  if (updaterConfigured) return;
+  updaterConfigured = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowDowngrade = false;
+
+  autoUpdater.on('checking-for-update', () => {
+    setUpdateState({
+      status: 'checking',
+      percent: 0,
+      message: 'Verificando atualizacao...',
+    });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    setUpdateState({
+      status: 'available',
+      ...serializeUpdateInfo(info),
+      percent: 0,
+      message: 'Atualizacao disponivel.',
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    setUpdateState({
+      status: 'not-available',
+      availableVersion: '',
+      releaseDate: '',
+      percent: 0,
+      message: 'Voce ja esta na versao mais recente.',
+    });
+  });
+
+  autoUpdater.on('download-progress', (progress = {}) => {
+    setUpdateState({
+      status: 'downloading',
+      percent: Number(progress.percent || 0),
+      message: 'Baixando atualizacao...',
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    setUpdateState({
+      status: 'downloaded',
+      ...serializeUpdateInfo(info),
+      percent: 100,
+      message: 'Atualizacao pronta para instalar.',
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    setUpdateState({
+      status: 'error',
+      message: error?.message || 'Falha ao verificar atualizacao.',
+    });
+  });
+}
+
+async function checkForUpdates({ silent = false } = {}) {
+  if (!canUseAutoUpdater()) {
+    return setUpdateState({
+      status: 'unsupported',
+      message: 'Atualizacoes automaticas funcionam apenas no app instalado.',
+    });
+  }
+
+  configureAutoUpdater();
+  if (updateCheckPromise) return updateCheckPromise;
+
+  if (silent && updateState.status === 'checking') return updateState;
+
+  updateCheckPromise = autoUpdater
+    .checkForUpdates()
+    .then(() => updateState)
+    .catch((error) => {
+      setUpdateState({
+        status: 'error',
+        message: error?.message || 'Falha ao verificar atualizacao.',
+      });
+      return updateState;
+    })
+    .finally(() => {
+      updateCheckPromise = null;
+    });
+
+  return updateCheckPromise;
+}
+
+function startUpdateChecks() {
+  if (!canUseAutoUpdater()) {
+    setUpdateState({ supported: false });
+    return;
+  }
+
+  configureAutoUpdater();
+  setUpdateState({ supported: true });
+
+  setTimeout(() => {
+    void checkForUpdates({ silent: true });
+  }, STARTUP_UPDATE_CHECK_DELAY_MS);
+
+  if (!updateCheckTimer) {
+    updateCheckTimer = setInterval(() => {
+      void checkForUpdates({ silent: true });
+    }, UPDATE_CHECK_INTERVAL_MS);
+  }
+}
 
 function getDistDir() {
   return path.resolve(__dirname, '..', 'dist');
@@ -108,6 +261,59 @@ ipcMain.handle('easyhub:print-html', async (_event, html) => {
   return { ok: true };
 });
 
+ipcMain.handle('easyhub:app-info', async () => ({
+  version: app.getVersion(),
+  isPackaged: app.isPackaged,
+  updateSupported: canUseAutoUpdater(),
+}));
+
+ipcMain.handle('easyhub:update-status', async () => setUpdateState({}));
+
+ipcMain.handle('easyhub:update-check', async () => checkForUpdates());
+
+ipcMain.handle('easyhub:update-download', async () => {
+  if (!canUseAutoUpdater()) {
+    return setUpdateState({
+      status: 'unsupported',
+      message: 'Atualizacoes automaticas funcionam apenas no app instalado.',
+    });
+  }
+
+  configureAutoUpdater();
+  setUpdateState({
+    status: 'downloading',
+    percent: 0,
+    message: 'Baixando atualizacao...',
+  });
+
+  try {
+    await autoUpdater.downloadUpdate();
+  } catch (error) {
+    setUpdateState({
+      status: 'error',
+      message: error?.message || 'Falha ao baixar atualizacao.',
+    });
+  }
+
+  return updateState;
+});
+
+ipcMain.handle('easyhub:update-install', async () => {
+  if (updateState.status !== 'downloaded') {
+    return setUpdateState({
+      status: 'error',
+      message: 'Nenhuma atualizacao baixada para instalar.',
+    });
+  }
+
+  setUpdateState({
+    status: 'installing',
+    message: 'Reiniciando para instalar...',
+  });
+  autoUpdater.quitAndInstall(false, true);
+  return updateState;
+});
+
 async function getAppUrl() {
   if (process.env.ELECTRON_START_URL) {
     return process.env.ELECTRON_START_URL;
@@ -133,8 +339,20 @@ async function createWindow() {
     },
   });
 
+  mainWindow = window;
+
   window.once('ready-to-show', () => {
     window.show();
+  });
+
+  window.webContents.once('did-finish-load', () => {
+    setUpdateState({});
+  });
+
+  window.on('closed', () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -145,15 +363,21 @@ async function createWindow() {
   await window.loadURL(appUrl);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (!process.env.ELECTRON_START_URL) {
     registerAppProtocol();
   }
 
-  return createWindow();
+  await createWindow();
+  startUpdateChecks();
 });
 
 app.on('window-all-closed', () => {
+  if (updateCheckTimer) {
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = null;
+  }
+
   if (process.platform !== 'darwin') {
     app.quit();
   }
