@@ -133,12 +133,12 @@ $currentVersion = [string]$package.version
 $nextVersion = if ($Version.Trim()) { $Version.Trim().TrimStart('v') } else { Get-NextVersion $currentVersion $Bump }
 $tagName = "v$nextVersion"
 
-$existingTag = (& git tag --list $tagName).Trim()
+$existingTag = ([string]::Join("`n", @(& git tag --list $tagName))).Trim()
 if ($existingTag) {
   throw "A tag $tagName ja existe localmente. Use uma versao maior."
 }
 
-$remoteTag = (& git ls-remote --tags origin $tagName).Trim()
+$remoteTag = ([string]::Join("`n", @(& git ls-remote --tags origin $tagName))).Trim()
 if ($remoteTag) {
   throw "A tag $tagName ja existe no GitHub. Use uma versao maior."
 }
@@ -157,7 +157,7 @@ if (-not $SkipChecks) {
 
 Run-Step 'Adicionar arquivos no Git' git @('add', '-A')
 
-$staged = (& git diff --cached --name-only).Trim()
+$staged = ([string]::Join("`n", @(& git diff --cached --name-only))).Trim()
 if (-not $staged) {
   throw "Nao ha arquivos para commitar."
 }

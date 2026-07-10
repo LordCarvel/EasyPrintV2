@@ -1,7 +1,7 @@
 {
   "name": "easyprint",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Easy Hub desktop app",
   "author": "LordCarvel",
   "type": "module",
@@ -22,6 +22,7 @@
     "installer": "npm run build:desktop && electron-builder --win nsis --x64",
     "release:win": "npm run build:desktop && electron-builder --win nsis --x64 --publish always",
     "release:next": "powershell -ExecutionPolicy Bypass -File ./scripts/release-next.ps1",
+    "release:next:wait": "powershell -ExecutionPolicy Bypass -File ./scripts/release-next.ps1 -WaitRelease",
     "dist:win": "npm run installer",
     "preview": "vite preview",
     "predeploy": "npm run build",
