@@ -21,6 +21,7 @@
     "electron:prod": "npm run build:desktop && electron .",
     "installer": "npm run build:desktop && electron-builder --win nsis --x64",
     "release:win": "npm run build:desktop && electron-builder --win nsis --x64 --publish always",
+    "release:next": "powershell -ExecutionPolicy Bypass -File ./scripts/release-next.ps1",
     "dist:win": "npm run installer",
     "preview": "vite preview",
     "predeploy": "npm run build",

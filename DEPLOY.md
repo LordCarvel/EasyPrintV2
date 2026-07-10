@@ -63,7 +63,31 @@ A partir da versao `1.1.0`, o app instalado consegue verificar, baixar e instala
 
 Importante: maquinas que ainda estao em uma versao antiga sem atualizador precisam instalar manualmente uma vez o instalador `1.1.0` ou superior. Depois disso, as proximas atualizacoes entram pelo app.
 
-Para publicar uma nova versao:
+Para publicar uma nova versao automaticamente, rode:
+
+```bash
+npm run release:next -- -WaitRelease
+```
+
+Esse comando:
+
+- sobe a versao patch automaticamente, por exemplo `1.1.1` para `1.1.2`;
+- roda build e testes;
+- faz commit;
+- cria a tag `v<versao>`;
+- faz push da branch e da tag;
+- aguarda a GitHub Release ficar pronta quando usado com `-WaitRelease`.
+
+Opcoes uteis:
+
+```bash
+npm run release:next -- -Bump minor
+npm run release:next -- -Version 1.2.0
+npm run release:next -- -SkipChecks
+npm run release:next -- -NoPush
+```
+
+Fluxo manual equivalente:
 
 1. Altere `"version"` em `package.json` para uma versao maior.
 2. Faca commit e push para `main`.
