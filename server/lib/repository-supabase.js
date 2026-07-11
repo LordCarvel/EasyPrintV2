@@ -46,6 +46,14 @@ const parseJsonValue = (value, fallback) => {
 const toJsonArray = (value) => Array.isArray(value) ? value : [];
 const toJsonObject = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 
+const normalizeOptionalIso = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return '';
+
+  const timestamp = new Date(String(value)).getTime();
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : '';
+};
+
 const throwIfError = (error) => {
   if (!error) return;
   const nextError = new Error(error.message || 'Falha ao acessar o Supabase.');
@@ -254,6 +262,7 @@ const rowToSettings = (row, storeId = '') => {
     printTemplate: toJsonObject(parseJsonValue(row?.print_template, {})),
     cashOrders,
     cashProcessed: toJsonArray(parseJsonValue(row?.cash_processed, [])),
+    sentCashClearedAt: row?.sent_cash_cleared_at || '',
     deliveryBoardState: toJsonObject(parseJsonValue(row?.delivery_board_state, {})),
     finallyStorageState,
     finallyStoragePreview: toJsonObject(parseJsonValue(row?.finally_storage_preview, {})),
@@ -445,6 +454,9 @@ export const updateStoreSettings = async (db, storeId, input = {}) => {
     printTemplate: input.printTemplate === undefined ? current.printTemplate : input.printTemplate,
     cashOrders: input.cashOrders === undefined ? current.cashOrders : input.cashOrders,
     cashProcessed: input.cashProcessed === undefined ? current.cashProcessed : input.cashProcessed,
+    sentCashClearedAt: input.sentCashClearedAt === undefined
+      ? current.sentCashClearedAt
+      : normalizeOptionalIso(input.sentCashClearedAt),
     deliveryBoardState: input.deliveryBoardState === undefined ? current.deliveryBoardState : input.deliveryBoardState,
     finallyStorageState: input.finallyStorageState === undefined ? current.finallyStorageState : input.finallyStorageState,
     finallyStoragePreview: input.finallyStoragePreview === undefined ? current.finallyStoragePreview : input.finallyStoragePreview
@@ -452,19 +464,25 @@ export const updateStoreSettings = async (db, storeId, input = {}) => {
 
   next.finallyStorageState = syncFinallyStorageWithEasyPrintCash(next.finallyStorageState, next.cashOrders);
 
+  const updatePayload = {
+    keywords: next.keywords,
+    catalogs: next.catalogs,
+    print_template: next.printTemplate,
+    cash_orders: next.cashOrders,
+    cash_processed: next.cashProcessed,
+    delivery_board_state: next.deliveryBoardState,
+    finally_storage_state: next.finallyStorageState,
+    finally_storage_preview: next.finallyStoragePreview,
+    updated_at: nowIso()
+  };
+
+  if (input.sentCashClearedAt !== undefined || current.sentCashClearedAt) {
+    updatePayload.sent_cash_cleared_at = next.sentCashClearedAt || null;
+  }
+
   const row = await readOne(
     db.from('store_settings')
-      .update({
-        keywords: next.keywords,
-        catalogs: next.catalogs,
-        print_template: next.printTemplate,
-        cash_orders: next.cashOrders,
-        cash_processed: next.cashProcessed,
-        delivery_board_state: next.deliveryBoardState,
-        finally_storage_state: next.finallyStorageState,
-        finally_storage_preview: next.finallyStoragePreview,
-        updated_at: nowIso()
-      })
+      .update(updatePayload)
       .eq('store_id', storeId)
       .select('*')
   );

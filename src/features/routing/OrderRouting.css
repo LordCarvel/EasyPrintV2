@@ -555,6 +555,24 @@
   min-width: 118px;
 }
 
+.sent-cash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sent-cash-info {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid #bdd3f0;
+  border-radius: 8px;
+  background: #f2f7ff;
+  color: #285180;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .sent-cash-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

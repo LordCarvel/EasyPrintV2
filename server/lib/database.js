@@ -90,6 +90,7 @@ export const migrate = (db) => {
       print_template TEXT NOT NULL DEFAULT '{}',
       cash_orders TEXT NOT NULL DEFAULT '[]',
       cash_processed TEXT NOT NULL DEFAULT '[]',
+      sent_cash_cleared_at TEXT NOT NULL DEFAULT '',
       delivery_board_state TEXT NOT NULL DEFAULT '{}',
       finally_storage_state TEXT NOT NULL DEFAULT '{}',
       finally_storage_preview TEXT NOT NULL DEFAULT '{}',
@@ -105,6 +106,7 @@ export const migrate = (db) => {
   ensureColumn(db, 'store_settings', 'delivery_board_state', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'store_settings', 'finally_storage_state', "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, 'store_settings', 'finally_storage_preview', "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, 'store_settings', 'sent_cash_cleared_at', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'orders', 'version', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'orders', 'updated_at', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'order_events', 'updated_at', "TEXT NOT NULL DEFAULT ''");

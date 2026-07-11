@@ -26,6 +26,14 @@ const assertOrderVersion = (order, expectedVersion) => {
   }
 };
 
+const normalizeOptionalIso = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return '';
+
+  const timestamp = new Date(String(value)).getTime();
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : '';
+};
+
 const rowToStore = (row) => row && ({
   id: row.id,
   name: row.name,
@@ -315,6 +323,7 @@ const rowToSettings = (row, storeId = '') => {
     printTemplate: decodeJson(row?.print_template, {}),
     cashOrders,
     cashProcessed: decodeJson(row?.cash_processed, []),
+    sentCashClearedAt: row?.sent_cash_cleared_at || '',
     deliveryBoardState: decodeJson(row?.delivery_board_state, {}),
     finallyStorageState,
     finallyStoragePreview: decodeJson(row?.finally_storage_preview, {}),
@@ -349,6 +358,9 @@ export const updateStoreSettings = (db, storeId, input = {}) => {
     printTemplate: input.printTemplate === undefined ? current.printTemplate : input.printTemplate,
     cashOrders: input.cashOrders === undefined ? current.cashOrders : input.cashOrders,
     cashProcessed: input.cashProcessed === undefined ? current.cashProcessed : input.cashProcessed,
+    sentCashClearedAt: input.sentCashClearedAt === undefined
+      ? current.sentCashClearedAt
+      : normalizeOptionalIso(input.sentCashClearedAt),
     deliveryBoardState: input.deliveryBoardState === undefined ? current.deliveryBoardState : input.deliveryBoardState,
     finallyStorageState: input.finallyStorageState === undefined ? current.finallyStorageState : input.finallyStorageState,
     finallyStoragePreview: input.finallyStoragePreview === undefined ? current.finallyStoragePreview : input.finallyStoragePreview
@@ -363,6 +375,7 @@ export const updateStoreSettings = (db, storeId, input = {}) => {
         print_template = ?,
         cash_orders = ?,
         cash_processed = ?,
+        sent_cash_cleared_at = ?,
         delivery_board_state = ?,
         finally_storage_state = ?,
         finally_storage_preview = ?,
@@ -374,6 +387,7 @@ export const updateStoreSettings = (db, storeId, input = {}) => {
     encodeJson(next.printTemplate),
     encodeJson(next.cashOrders),
     encodeJson(next.cashProcessed),
+    next.sentCashClearedAt,
     encodeJson(next.deliveryBoardState),
     encodeJson(next.finallyStorageState),
     encodeJson(next.finallyStoragePreview),

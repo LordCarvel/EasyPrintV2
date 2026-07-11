@@ -17,4 +17,7 @@ update public.order_events
 set updated_at = coalesce(updated_at, created_at, now())
 where updated_at is null;
 
+alter table public.store_settings
+  add column if not exists sent_cash_cleared_at timestamptz;
+
 notify pgrst, 'reload schema';

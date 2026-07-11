@@ -411,14 +411,45 @@
   font-size: 0.86rem;
 }
 
-.btn-refresh-sent {
+.cash-flow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-refresh-sent,
+.btn-clear-sent,
+.btn-reopen-sent {
   padding: 8px 12px;
-  border: 1px solid var(--color-blue);
   border-radius: 6px;
-  background: #eef3ff;
-  color: var(--color-blue);
   font-weight: 700;
   cursor: pointer;
+}
+
+.btn-refresh-sent {
+  border: 1px solid var(--color-blue);
+  background: #eef3ff;
+  color: var(--color-blue);
+}
+
+.btn-clear-sent {
+  border: 1px solid #d7b85b;
+  background: #fff8df;
+  color: #725000;
+}
+
+.btn-reopen-sent {
+  border: 1px solid #bdd3f0;
+  background: #f2f7ff;
+  color: var(--color-blue);
+}
+
+.btn-refresh-sent:disabled,
+.btn-clear-sent:disabled,
+.btn-reopen-sent:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .cash-flow-warning {
@@ -428,6 +459,17 @@
   border-radius: 8px;
   background: #fff8df;
   color: #725000;
+  font-weight: 700;
+}
+
+.cash-flow-info {
+  margin-bottom: var(--spacing-md);
+  padding: 10px 12px;
+  border: 1px solid #bdd3f0;
+  border-radius: 8px;
+  background: #f2f7ff;
+  color: var(--color-blue);
+  font-size: 0.86rem;
   font-weight: 700;
 }
 

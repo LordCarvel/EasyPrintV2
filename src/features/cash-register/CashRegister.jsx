@@ -1,15 +1,42 @@
 ﻿import { Fragment, useEffect, useState } from 'react';
 import { Icon } from '../../shared/ui/Icon';
-import { confirmAction } from '../../shared/ui/appDialog';
+import { confirmAction, showAppAlert } from '../../shared/ui/appDialog';
 import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
 import { routingApi } from '../routing/routingApi';
 import { formatCurrency, parseIfoodFinancial } from '../../../shared/routing/ifoodFinancial';
 import './CashRegister.css';
 
+const getTimestamp = (value) => {
+  const timestamp = new Date(value || '').getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const isSentCashOpenOrder = (order = {}, sentCashClearedAt = '') => {
+  const clearedTimestamp = getTimestamp(sentCashClearedAt);
+  if (!clearedTimestamp) return true;
+
+  const orderTimestamp = getTimestamp(order.createdAt);
+  return !orderTimestamp || orderTimestamp > clearedTimestamp;
+};
+
+const formatSentCashClearedAt = (value) => {
+  const timestamp = getTimestamp(value);
+  if (!timestamp) return '';
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(new Date(timestamp));
+};
+
 export function CashRegister() {
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({ dinheiro: 0, cartao: 0, online: 0 });
   const [sentOrders, setSentOrders] = useState([]);
+  const [sentCashClearedAt, setSentCashClearedAt] = useState('');
+  const [sentCashBusy, setSentCashBusy] = useState(false);
   const [sentStats, setSentStats] = useState({ total: 0, dinheiro: 0, cartao: 0, online: 0, count: 0 });
   const [sentError, setSentError] = useState('');
   const [processed, setProcessed] = useState([]);
@@ -29,7 +56,7 @@ export function CashRegister() {
 
   useEffect(() => {
     calculateSentStats();
-  }, [sentOrders]);
+  }, [sentOrders, sentCashClearedAt]);
 
   useEffect(() => {
     const handleNewOrder = (event) => {
@@ -84,8 +111,12 @@ export function CashRegister() {
 
   const loadSentOrders = async () => {
     try {
-      const payload = await routingApi.listSentOrders();
+      const [payload, settingsPayload] = await Promise.all([
+        routingApi.listSentOrders(),
+        routingApi.getSettings()
+      ]);
       setSentOrders(Array.isArray(payload.orders) ? payload.orders : []);
+      setSentCashClearedAt(settingsPayload.settings?.sentCashClearedAt || '');
       setSentError('');
     } catch (error) {
       setSentOrders([]);
@@ -144,26 +175,28 @@ export function CashRegister() {
     const seenOrders = new Set();
     const nextStats = { total: 0, dinheiro: 0, cartao: 0, online: 0, count: 0 };
 
-    sentOrders.forEach((order) => {
-      const orderKey = String(order.orderNumber || order.parsedData?.orderNumber || order.id || '').trim();
-      if (order.status === 'cancelado') return;
-      if (orderKey && seenOrders.has(orderKey)) return;
-      if (orderKey) seenOrders.add(orderKey);
+    sentOrders
+      .filter((order) => isSentCashOpenOrder(order, sentCashClearedAt))
+      .forEach((order) => {
+        const orderKey = String(order.orderNumber || order.parsedData?.orderNumber || order.id || '').trim();
+        if (order.status === 'cancelado') return;
+        if (orderKey && seenOrders.has(orderKey)) return;
+        if (orderKey) seenOrders.add(orderKey);
 
-      const financial = getSentOrderFinancial(order);
-      if (!financial.hasFinancialData) return;
+        const financial = getSentOrderFinancial(order);
+        if (!financial.hasFinancialData) return;
 
-      nextStats.total += financial.deductionValue;
-      nextStats.count += 1;
+        nextStats.total += financial.deductionValue;
+        nextStats.count += 1;
 
-      if (financial.paymentMethod === 'dinheiro') {
-        nextStats.dinheiro += financial.deductionValue;
-      } else if (financial.paymentMethod === 'cartao') {
-        nextStats.cartao += financial.deductionValue;
-      } else {
-        nextStats.online += financial.deductionValue;
-      }
-    });
+        if (financial.paymentMethod === 'dinheiro') {
+          nextStats.dinheiro += financial.deductionValue;
+        } else if (financial.paymentMethod === 'cartao') {
+          nextStats.cartao += financial.deductionValue;
+        } else {
+          nextStats.online += financial.deductionValue;
+        }
+      });
 
     setSentStats(nextStats);
   };
@@ -249,6 +282,51 @@ export function CashRegister() {
     saveRegisterState([], []);
   };
 
+  const clearSentCashDay = async () => {
+    const openSentOrders = sentOrders.filter((order) => isSentCashOpenOrder(order, sentCashClearedAt));
+    if (!openSentOrders.length) {
+      void showAppAlert('Nao ha saidas abertas para limpar.');
+      return;
+    }
+
+    const confirmed = await confirmAction(
+      'Isso limpa apenas as saidas dos pedidos enviados. Os pedidos continuam salvos no historico e novos envios entram normalmente.',
+      { title: 'Limpar saidas dos enviados', confirmLabel: 'Limpar dia' }
+    );
+    if (!confirmed) return;
+
+    setSentCashBusy(true);
+    try {
+      const nextClearedAt = new Date().toISOString();
+      const settings = await saveStoreSettingsPatch({ sentCashClearedAt: nextClearedAt });
+      setSentCashClearedAt(settings.sentCashClearedAt || nextClearedAt);
+      await loadSentOrders();
+    } catch (error) {
+      void showAppAlert(error.message || 'Falha ao limpar saidas dos enviados.', { tone: 'danger' });
+    } finally {
+      setSentCashBusy(false);
+    }
+  };
+
+  const reopenSentCashDay = async () => {
+    const confirmed = await confirmAction(
+      'Isso volta a mostrar os pedidos enviados anteriores nos totais de saida.',
+      { title: 'Reabrir saidas dos enviados', confirmLabel: 'Reabrir' }
+    );
+    if (!confirmed) return;
+
+    setSentCashBusy(true);
+    try {
+      const settings = await saveStoreSettingsPatch({ sentCashClearedAt: '' });
+      setSentCashClearedAt(settings.sentCashClearedAt || '');
+      await loadSentOrders();
+    } catch (error) {
+      void showAppAlert(error.message || 'Falha ao reabrir saidas dos enviados.', { tone: 'danger' });
+    } finally {
+      setSentCashBusy(false);
+    }
+  };
+
   const paymentLabel = (method) => {
     if (method === 'dinheiro') return 'Dinheiro';
     if (method === 'cartao') return 'Cartao';
@@ -257,6 +335,7 @@ export function CashRegister() {
 
   const incomingTotal = stats.dinheiro + stats.cartao + stats.online;
   const balanceTotal = incomingTotal - sentStats.total;
+  const sentCashOrders = sentOrders.filter((order) => isSentCashOpenOrder(order, sentCashClearedAt));
 
   const exportReport = () => {
     const exportedOrderKeys = new Set();
@@ -268,7 +347,7 @@ export function CashRegister() {
       return true;
     });
     const exportedSentKeys = new Set();
-    const exportedSentOrders = sentOrders.filter((order) => {
+    const exportedSentOrders = sentCashOrders.filter((order) => {
       const orderKey = String(order.orderNumber || order.parsedData?.orderNumber || order.id || '').trim();
       if (order.status === 'cancelado') return false;
       if (orderKey && exportedSentKeys.has(orderKey)) return false;
@@ -367,12 +446,33 @@ export function CashRegister() {
             <h3>Saidas dos enviados</h3>
             <p>Pedidos enviados por esta loja entram como desconto/saida da conta iFood.</p>
           </div>
-          <button type="button" className="btn-refresh-sent" onClick={loadSentOrders}>
-            Atualizar
-          </button>
+          <div className="cash-flow-actions">
+            <button type="button" className="btn-refresh-sent" onClick={loadSentOrders} disabled={sentCashBusy}>
+              Atualizar
+            </button>
+            <button
+              type="button"
+              className="btn-clear-sent"
+              onClick={clearSentCashDay}
+              disabled={!sentCashOrders.length || sentCashBusy}
+            >
+              Limpar dia
+            </button>
+            {sentCashClearedAt ? (
+              <button type="button" className="btn-reopen-sent" onClick={reopenSentCashDay} disabled={sentCashBusy}>
+                Reabrir
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {sentError ? <div className="cash-flow-warning">{sentError}</div> : null}
+
+        {sentCashClearedAt ? (
+          <div className="cash-flow-info">
+            Saidas anteriores fechadas em {formatSentCashClearedAt(sentCashClearedAt)}. O historico enviado continua salvo.
+          </div>
+        ) : null}
 
         <div className="sent-flow-grid">
           <div>
@@ -401,15 +501,15 @@ export function CashRegister() {
               </tr>
             </thead>
             <tbody>
-              {sentOrders.length === 0 && (
+              {sentCashOrders.length === 0 && (
                 <tr>
                   <td className="empty-message" colSpan="5">
-                    Nenhuma saida de pedido enviado ainda.
+                    {sentOrders.length ? 'Saidas dos enviados limpas. Novos pedidos enviados aparecerao aqui.' : 'Nenhuma saida de pedido enviado ainda.'}
                   </td>
                 </tr>
               )}
 
-              {sentOrders.map((order) => {
+              {sentCashOrders.map((order) => {
                 const financial = getSentOrderFinancial(order);
                 return (
                   <tr key={order.id} className={order.status === 'cancelado' ? 'canceled-row' : ''}>

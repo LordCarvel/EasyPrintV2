@@ -99,11 +99,15 @@ create table if not exists public.store_settings (
   print_template jsonb not null default '{}'::jsonb,
   cash_orders jsonb not null default '[]'::jsonb,
   cash_processed jsonb not null default '[]'::jsonb,
+  sent_cash_cleared_at timestamptz,
   delivery_board_state jsonb not null default '{}'::jsonb,
   finally_storage_state jsonb not null default '{}'::jsonb,
   finally_storage_preview jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
+
+alter table public.store_settings
+  add column if not exists sent_cash_cleared_at timestamptz;
 
 alter table public.stores enable row level security;
 alter table public.store_connections enable row level security;

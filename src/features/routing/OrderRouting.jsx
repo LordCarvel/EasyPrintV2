@@ -4,6 +4,7 @@ import { Icon } from '../../shared/ui/Icon';
 import { confirmAction, showAppAlert } from '../../shared/ui/appDialog';
 import { clearCurrentStoreId, getCurrentStoreId, getSessionToken, routingApi, setAuthSession } from './routingApi';
 import { printRoutedOrderText } from './directOrderPrint';
+import { loadStoreSettings, saveStoreSettingsPatch } from './storeSettingsClient';
 import { formatCurrency, parseIfoodFinancial } from '../../../shared/routing/ifoodFinancial';
 import './OrderRouting.css';
 
@@ -53,6 +54,31 @@ const paymentLabels = {
   dinheiro: 'Dinheiro',
   cartao: 'Cartao',
   online: 'Online'
+};
+
+const getTimestamp = (value) => {
+  const timestamp = new Date(value || '').getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const isSentCashOpenOrder = (order = {}, sentCashClearedAt = '') => {
+  const clearedTimestamp = getTimestamp(sentCashClearedAt);
+  if (!clearedTimestamp) return true;
+
+  const orderTimestamp = getTimestamp(order.createdAt);
+  return !orderTimestamp || orderTimestamp > clearedTimestamp;
+};
+
+const formatSentCashClearedAt = (value) => {
+  const timestamp = getTimestamp(value);
+  if (!timestamp) return '';
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(new Date(timestamp));
 };
 
 const RESEND_STATUS = 'reenviado';
@@ -355,6 +381,8 @@ export function OrderRouting() {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [receivedOrders, setReceivedOrders] = useState([]);
   const [sentOrders, setSentOrders] = useState([]);
+  const [sentCashClearedAt, setSentCashClearedAt] = useState('');
+  const [sentCashBusy, setSentCashBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [feedbackType, setFeedbackType] = useState('success');
   const [loading, setLoading] = useState(false);
@@ -364,7 +392,11 @@ export function OrderRouting() {
   const allowedTargets = routePreview?.allowedTargets || me?.allowedTargets || [];
   const selectedTarget = allowedTargets.find((store) => store.id === targetStoreId);
   const otherStores = (me?.stores || []).filter((store) => store.id !== currentStore?.id);
-  const sentCashRows = useMemo(() => buildSentCashRows(sentOrders), [sentOrders]);
+  const openSentCashOrders = useMemo(
+    () => sentOrders.filter((order) => isSentCashOpenOrder(order, sentCashClearedAt)),
+    [sentOrders, sentCashClearedAt]
+  );
+  const sentCashRows = useMemo(() => buildSentCashRows(openSentCashOrders), [openSentCashOrders]);
   const sentCashStats = useMemo(() => buildSentCashStats(sentCashRows), [sentCashRows]);
   const connectionsByTarget = useMemo(() => {
     const map = new Map();
@@ -404,12 +436,14 @@ export function OrderRouting() {
     if (!getCurrentStoreId()) return;
 
     try {
-      const [received, sent] = await Promise.all([
+      const [received, sent, settings] = await Promise.all([
         routingApi.listReceivedOrders(),
-        routingApi.listSentOrders()
+        routingApi.listSentOrders(),
+        loadStoreSettings()
       ]);
       setReceivedOrders(received.orders || []);
       setSentOrders(sent.orders || []);
+      setSentCashClearedAt(settings.sentCashClearedAt || '');
     } catch (err) {
       setApiError(err.message);
     }
@@ -675,6 +709,52 @@ export function OrderRouting() {
     return () => window.removeEventListener('easyhubReceivedOrdersUpdated', handleReceivedOrdersUpdate);
   }, []);
 
+  const clearSentCashDay = async () => {
+    if (!sentCashRows.length) {
+      void showAppAlert('Nao ha saidas abertas para limpar.');
+      return;
+    }
+
+    const confirmed = await confirmAction(
+      'Isso limpa apenas o caixa dos pedidos enviados deste dia. Os pedidos continuam salvos no historico e novos envios entram normalmente.',
+      { title: 'Limpar caixa dos enviados', confirmLabel: 'Limpar dia' }
+    );
+    if (!confirmed) return;
+
+    setSentCashBusy(true);
+    try {
+      const nextClearedAt = new Date().toISOString();
+      const settings = await saveStoreSettingsPatch({ sentCashClearedAt: nextClearedAt });
+      setSentCashClearedAt(settings.sentCashClearedAt || nextClearedAt);
+      showFeedback('Caixa dos enviados limpo. Novos pedidos enviados entram no proximo fechamento.');
+      await loadOrders();
+    } catch (err) {
+      void showAppAlert(err.message || 'Falha ao limpar caixa dos enviados.', { tone: 'danger' });
+    } finally {
+      setSentCashBusy(false);
+    }
+  };
+
+  const reopenSentCashDay = async () => {
+    const confirmed = await confirmAction(
+      'Isso volta a mostrar os pedidos enviados anteriores nos totais de saida.',
+      { title: 'Reabrir caixa dos enviados', confirmLabel: 'Reabrir' }
+    );
+    if (!confirmed) return;
+
+    setSentCashBusy(true);
+    try {
+      const settings = await saveStoreSettingsPatch({ sentCashClearedAt: '' });
+      setSentCashClearedAt(settings.sentCashClearedAt || '');
+      showFeedback('Caixa dos enviados reaberto.');
+      await loadOrders();
+    } catch (err) {
+      void showAppAlert(err.message || 'Falha ao reabrir caixa dos enviados.', { tone: 'danger' });
+    } finally {
+      setSentCashBusy(false);
+    }
+  };
+
   const exportSentCashReport = () => {
     const rows = sentCashRows.filter((row) => !row.canceled && !row.duplicateCashEntry);
     const report = [
@@ -899,11 +979,29 @@ export function OrderRouting() {
           <h3>Caixa dos enviados</h3>
           <p className="routing-note">Pedidos enviados por esta loja para descontar da conta iFood da origem.</p>
         </div>
-        <button type="button" onClick={exportSentCashReport} disabled={!sentCashRows.length}>
-          <Icon name="report" size={14} />
-          Exportar
-        </button>
+        <div className="sent-cash-actions">
+          <button type="button" onClick={exportSentCashReport} disabled={!sentCashRows.length || sentCashBusy}>
+            <Icon name="report" size={14} />
+            Exportar
+          </button>
+          <button type="button" onClick={clearSentCashDay} disabled={!sentCashRows.length || sentCashBusy}>
+            <Icon name="trash" size={14} />
+            Limpar dia
+          </button>
+          {sentCashClearedAt ? (
+            <button type="button" onClick={reopenSentCashDay} disabled={sentCashBusy}>
+              <Icon name="refresh" size={14} />
+              Reabrir
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {sentCashClearedAt ? (
+        <div className="sent-cash-info">
+          Saidas anteriores fechadas em {formatSentCashClearedAt(sentCashClearedAt)}. O historico enviado continua salvo abaixo.
+        </div>
+      ) : null}
 
       <div className="sent-cash-stats">
         <div className="sent-cash-stat total">
@@ -980,7 +1078,9 @@ export function OrderRouting() {
               </tr>
             )) : (
               <tr>
-                <td colSpan="7" className="sent-cash-empty">Nenhum pedido enviado ainda.</td>
+                <td colSpan="7" className="sent-cash-empty">
+                  {sentOrders.length ? 'Caixa dos enviados limpo. Novos pedidos enviados aparecerao aqui.' : 'Nenhum pedido enviado ainda.'}
+                </td>
               </tr>
             )}
           </tbody>
