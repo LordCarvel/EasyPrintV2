@@ -71,10 +71,11 @@ begin
     perform cron.unschedule(existing_job_id);
   end if;
 
-  -- O Supabase Cron aceita intervalos; assim nao ha excecao na virada do mes.
+  -- Executa as 03:15 UTC nos dias impares do mes. O pg_cron do Supabase
+  -- aceita cron tradicional, mas nao aceita intervalos como "48 hours".
   perform cron.schedule(
     'easyprint-retention-cleanup',
-    '48 hours',
+    '15 3 1-31/2 * *',
     $command$select public.cleanup_easyprint_transient_data(interval '2 days');$command$
   );
 end;
