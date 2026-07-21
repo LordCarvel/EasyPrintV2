@@ -4,6 +4,8 @@ import { INITIAL_STORES } from './seed-data.js';
 import { createPasswordHash, createSessionToken, normalizeUsername, verifyPassword } from './auth.js';
 
 const RESEND_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ORDER_RETENTION_DAYS = 2;
+const ORDER_LIST_LIMIT = 200;
 const ORDER_VERSION_CONFLICT_MESSAGE = 'Esse pedido foi atualizado em outra maquina. Recarregue a fila.';
 
 const createOrderConflictError = (order = null) => {
@@ -633,22 +635,28 @@ export const getOrder = async (db, orderId) => {
 };
 
 export const listReceivedOrders = async (db, storeId) => {
+  const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const rows = await readMany(
     db.from('orders')
       .select(orderSelect)
       .eq('target_store_id', storeId)
       .neq('status', ORDER_STATUS.CANCELED)
+      .gte('created_at', retentionCutoff)
       .order('created_at', { ascending: false })
+      .limit(ORDER_LIST_LIMIT)
   );
   return rows.map(rowToOrder);
 };
 
 export const listSentOrders = async (db, storeId) => {
+  const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const rows = await readMany(
     db.from('orders')
       .select(orderSelect)
       .eq('source_store_id', storeId)
+      .gte('created_at', retentionCutoff)
       .order('created_at', { ascending: false })
+      .limit(ORDER_LIST_LIMIT)
   );
   return rows.map(rowToOrder);
 };

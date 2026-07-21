@@ -11,6 +11,9 @@ Arquitetura:
 1. Crie um projeto no Supabase.
 2. Abra SQL Editor.
 3. Rode o conteudo de `supabase/schema.sql`.
+4. Rode o conteudo de `supabase/retention-cleanup.sql` para manter somente dois dias
+   de dados operacionais. Perfis, conexoes, palavras-chave, catalogos, modelos de
+   impressao, motoboys e configuracoes das ferramentas sao preservados.
 4. Em Data API/API settings, confirme que o schema `public` esta exposto.
 5. Copie:
    - Project URL: `SUPABASE_URL`

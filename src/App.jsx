@@ -67,7 +67,7 @@ function getStoreInitials(store) {
 }
 
 const areaTextToInput = (value = []) => Array.isArray(value) ? value.join(', ') : String(value || '');
-const RECEIVED_ORDER_POLL_INTERVAL_MS = 3000;
+const RECEIVED_ORDER_POLL_INTERVAL_MS = 15000;
 const RECEIVED_ORDER_TOAST_MS = 6500;
 const AUTO_PRINT_JOB_DELAY_MS = 1200;
 

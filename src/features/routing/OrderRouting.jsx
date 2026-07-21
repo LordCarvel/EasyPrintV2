@@ -432,18 +432,20 @@ export function OrderRouting() {
     }
   };
 
-  const loadOrders = async () => {
+  const loadOrders = async ({ includeSettings = false } = {}) => {
     if (!getCurrentStoreId()) return;
 
     try {
-      const [received, sent, settings] = await Promise.all([
+      const requests = [
         routingApi.listReceivedOrders(),
-        routingApi.listSentOrders(),
-        loadStoreSettings()
-      ]);
+        routingApi.listSentOrders()
+      ];
+      if (includeSettings) requests.push(loadStoreSettings());
+
+      const [received, sent, settings] = await Promise.all(requests);
       setReceivedOrders(received.orders || []);
       setSentOrders(sent.orders || []);
-      setSentCashClearedAt(settings.sentCashClearedAt || '');
+      if (settings) setSentCashClearedAt(settings.sentCashClearedAt || '');
     } catch (err) {
       setApiError(err.message);
     }
@@ -452,7 +454,7 @@ export function OrderRouting() {
   useEffect(() => {
     if (!currentStoreId) return;
     void loadMe();
-    void loadOrders();
+    void loadOrders({ includeSettings: true });
   }, [currentStoreId]);
 
   const handleConfigured = (storeId) => {
@@ -693,7 +695,7 @@ export function OrderRouting() {
 
     const timer = window.setInterval(() => {
       void loadOrders();
-    }, 10000);
+    }, 30000);
 
     return () => window.clearInterval(timer);
   }, [currentStoreId]);
