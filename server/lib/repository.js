@@ -4,6 +4,8 @@ import { INITIAL_STORES } from './seed-data.js';
 import { createPasswordHash, createSessionToken, normalizeUsername, verifyPassword } from './auth.js';
 
 const RESEND_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ORDER_RETENTION_DAYS = 2;
+const ORDER_LIST_LIMIT = 200;
 const ORDER_VERSION_CONFLICT_MESSAGE = 'Esse pedido foi atualizado em outra maquina. Recarregue a fila.';
 
 const createOrderConflictError = (order = null) => {
@@ -326,7 +328,7 @@ const rowToSettings = (row, storeId = '') => {
     sentCashClearedAt: row?.sent_cash_cleared_at || '',
     deliveryBoardState: decodeJson(row?.delivery_board_state, {}),
     finallyStorageState,
-    finallyStoragePreview: decodeJson(row?.finally_storage_preview, {}),
+    operationalCleanupAt: '',
     updatedAt: row?.updated_at || ''
   };
 };
@@ -352,6 +354,7 @@ export const getStoreSettings = (db, storeId) => {
 export const updateStoreSettings = (db, storeId, input = {}) => {
   ensureStoreSettings(db, storeId);
   const current = getStoreSettings(db, storeId);
+  const updatedAt = nowIso();
   const next = {
     keywords: input.keywords === undefined ? current.keywords : input.keywords,
     catalogs: input.catalogs === undefined ? current.catalogs : input.catalogs,
@@ -363,7 +366,7 @@ export const updateStoreSettings = (db, storeId, input = {}) => {
       : normalizeOptionalIso(input.sentCashClearedAt),
     deliveryBoardState: input.deliveryBoardState === undefined ? current.deliveryBoardState : input.deliveryBoardState,
     finallyStorageState: input.finallyStorageState === undefined ? current.finallyStorageState : input.finallyStorageState,
-    finallyStoragePreview: input.finallyStoragePreview === undefined ? current.finallyStoragePreview : input.finallyStoragePreview
+    finallyStoragePreview: {}
   };
 
   next.finallyStorageState = syncFinallyStorageWithEasyPrintCash(next.finallyStorageState, next.cashOrders);
@@ -391,11 +394,23 @@ export const updateStoreSettings = (db, storeId, input = {}) => {
     encodeJson(next.deliveryBoardState),
     encodeJson(next.finallyStorageState),
     encodeJson(next.finallyStoragePreview),
-    nowIso(),
+    updatedAt,
     storeId
   );
 
-  return getStoreSettings(db, storeId);
+  const settingsPatch = { storeId, updatedAt };
+  if (input.keywords !== undefined) settingsPatch.keywords = next.keywords;
+  if (input.catalogs !== undefined) settingsPatch.catalogs = next.catalogs;
+  if (input.printTemplate !== undefined) settingsPatch.printTemplate = next.printTemplate;
+  if (input.cashOrders !== undefined) settingsPatch.cashOrders = next.cashOrders;
+  if (input.cashProcessed !== undefined) settingsPatch.cashProcessed = next.cashProcessed;
+  if (input.sentCashClearedAt !== undefined) settingsPatch.sentCashClearedAt = next.sentCashClearedAt;
+  if (input.deliveryBoardState !== undefined) settingsPatch.deliveryBoardState = next.deliveryBoardState;
+  if (input.cashOrders !== undefined || input.finallyStorageState !== undefined) {
+    settingsPatch.finallyStorageState = next.finallyStorageState;
+  }
+
+  return settingsPatch;
 };
 
 export const listConnectionsFrom = (db, sourceStoreId) =>
@@ -516,20 +531,54 @@ export const createOrder = (db, input) => {
 export const getOrder = (db, orderId) =>
   rowToOrder(db.prepare(`SELECT ${orderSelect} WHERE o.id = ?`).get(orderId));
 
-export const listReceivedOrders = (db, storeId) =>
-  db.prepare(`
+export const listReceivedOrders = (db, storeId, options = {}) => {
+  const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const updatedAfter = normalizeOptionalIso(options.updatedAfter) || '';
+
+  if (updatedAfter) {
+    return db.prepare(`
+      SELECT ${orderSelect}
+      WHERE o.target_store_id = ?
+        AND o.created_at >= ?
+        AND o.updated_at > ?
+      ORDER BY o.created_at DESC
+      LIMIT ?
+    `).all(storeId, retentionCutoff, updatedAfter, ORDER_LIST_LIMIT).map(rowToOrder);
+  }
+
+  return db.prepare(`
     SELECT ${orderSelect}
     WHERE o.target_store_id = ?
       AND o.status != ?
+      AND o.created_at >= ?
     ORDER BY o.created_at DESC
-  `).all(storeId, ORDER_STATUS.CANCELED).map(rowToOrder);
+    LIMIT ?
+  `).all(storeId, ORDER_STATUS.CANCELED, retentionCutoff, ORDER_LIST_LIMIT).map(rowToOrder);
+};
 
-export const listSentOrders = (db, storeId) =>
-  db.prepare(`
+export const listSentOrders = (db, storeId, options = {}) => {
+  const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const updatedAfter = normalizeOptionalIso(options.updatedAfter) || '';
+
+  if (updatedAfter) {
+    return db.prepare(`
+      SELECT ${orderSelect}
+      WHERE o.source_store_id = ?
+        AND o.created_at >= ?
+        AND o.updated_at > ?
+      ORDER BY o.created_at DESC
+      LIMIT ?
+    `).all(storeId, retentionCutoff, updatedAfter, ORDER_LIST_LIMIT).map(rowToOrder);
+  }
+
+  return db.prepare(`
     SELECT ${orderSelect}
     WHERE o.source_store_id = ?
+      AND o.created_at >= ?
     ORDER BY o.created_at DESC
-  `).all(storeId).map(rowToOrder);
+    LIMIT ?
+  `).all(storeId, retentionCutoff, ORDER_LIST_LIMIT).map(rowToOrder);
+};
 
 export const markOrderViewed = (db, orderId, expectedVersion) => {
   const order = getOrder(db, orderId);

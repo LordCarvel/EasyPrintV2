@@ -21,6 +21,14 @@ npm install
 npm run dev
 ```
 
+## Modo local temporario
+
+O app usa `localStorage` por padrao e funciona sem Render ou Supabase. Perfis,
+configuracoes, caixa, motoboys e filas locais ficam salvos no computador.
+
+Sem um servidor, pedidos roteados nao sao compartilhados entre computadores.
+Para reativar o backend no futuro, gere o frontend com `VITE_DATA_MODE=remote`.
+
 ## Build
 
 ```bash

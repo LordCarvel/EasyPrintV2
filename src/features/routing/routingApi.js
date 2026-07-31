@@ -1,5 +1,8 @@
+import { localRoutingApi } from './localRoutingStore';
+
 export const CURRENT_STORE_KEY = 'easyPrintRoutingCurrentStoreId';
 export const SESSION_TOKEN_KEY = 'easyPrintRoutingSessionToken';
+export const LOCAL_DATA_MODE = import.meta.env.VITE_DATA_MODE !== 'remote';
 
 const LOCAL_API_URL = 'http://127.0.0.1:3333';
 const RENDER_API_URL = 'https://easyprint-routing-api.onrender.com';
@@ -45,7 +48,14 @@ export const getCurrentStoreId = () => {
 
 export const getSessionToken = () => {
   if (typeof window === 'undefined') return '';
-  return window.localStorage.getItem(SESSION_TOKEN_KEY) || '';
+  const storedToken = window.localStorage.getItem(SESSION_TOKEN_KEY) || '';
+  if (storedToken || !LOCAL_DATA_MODE) return storedToken;
+
+  const currentStoreId = getCurrentStoreId();
+  if (!currentStoreId) return '';
+  const localToken = `local:${currentStoreId}`;
+  window.localStorage.setItem(SESSION_TOKEN_KEY, localToken);
+  return localToken;
 };
 
 export const setCurrentStoreId = (storeId) => {
@@ -100,7 +110,14 @@ export async function apiRequest(path, options = {}) {
   return payload;
 }
 
-export const routingApi = {
+const buildOrderListPath = (kind, options = {}) => {
+  const params = new URLSearchParams();
+  if (options.updatedAfter) params.set('updatedAfter', options.updatedAfter);
+  const query = params.toString();
+  return `/api/orders/${kind}${query ? `?${query}` : ''}`;
+};
+
+const remoteRoutingApi = {
   listSetupStores: () => apiRequest('/api/setup/stores', { requireStore: false }),
   createSetupStore: (body) => apiRequest('/api/setup/stores', { method: 'POST', body, requireStore: false }),
   login: (body) => apiRequest('/api/auth/login', { method: 'POST', body, requireStore: false }),
@@ -123,8 +140,8 @@ export const routingApi = {
       method: 'POST',
       body: { rawText, targetStoreId, routeConfirmed }
     }),
-  listReceivedOrders: () => apiRequest('/api/orders/received'),
-  listSentOrders: () => apiRequest('/api/orders/sent'),
+  listReceivedOrders: (options) => apiRequest(buildOrderListPath('received', options)),
+  listSentOrders: (options) => apiRequest(buildOrderListPath('sent', options)),
   getOrder: (orderId) => apiRequest(`/api/orders/${encodeURIComponent(orderId)}`),
   addOrderEvent: (orderId, body) =>
     apiRequest(`/api/orders/${encodeURIComponent(orderId)}/events`, {
@@ -152,3 +169,5 @@ export const routingApi = {
       body: { version }
     })
 };
+
+export const routingApi = LOCAL_DATA_MODE ? localRoutingApi : remoteRoutingApi;

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   clearCurrentStoreId,
   getSessionToken,
+  LOCAL_DATA_MODE,
   routingApi,
   setAuthSession
 } from '../../features/routing/routingApi';
@@ -85,7 +86,11 @@ function StoreProfileLogin({ onSessionReady }) {
       <section className="store-profile-card">
         <div className="store-profile-header">
           <h1>Perfil da loja</h1>
-          <p>Entre uma vez para carregar caixa, motoboys, rotas e configuracoes da pizzaria em todos os projetos.</p>
+          <p>
+            {LOCAL_DATA_MODE
+              ? 'Escolha a loja. Enquanto o banco estiver fora, tudo sera salvo somente neste computador.'
+              : 'Entre uma vez para carregar caixa, motoboys, rotas e configuracoes da pizzaria em todos os projetos.'}
+          </p>
         </div>
 
         {error ? <div className="store-profile-error">{error}</div> : null}
@@ -118,7 +123,10 @@ function StoreProfileLogin({ onSessionReady }) {
           Entrar
         </button>
 
-        <p className="store-profile-note">Lojas iniciais: penha, gravata ou sao-domingos. Senha inicial: 1234.</p>
+        <p className="store-profile-note">
+          Lojas iniciais: penha, gravata ou sao-domingos. Senha inicial: 1234.
+          {LOCAL_DATA_MODE ? ' O modo local nao compartilha pedidos entre computadores.' : ''}
+        </p>
 
         <div className="store-profile-store-list">
           {stores.map((store) => (

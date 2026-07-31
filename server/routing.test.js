@@ -111,4 +111,27 @@ assert.throws(
   (error) => error?.statusCode === 409 && error?.code === 'ORDER_VERSION_CONFLICT'
 );
 
+const cursorBeforeChanges = new Date(Date.now() - 60_000).toISOString();
+const cursorAfterChanges = new Date(Date.now() + 60_000).toISOString();
+assert.equal(repository.listSentOrders(db, 'penha', { updatedAfter: cursorBeforeChanges }).length, 1);
+assert.equal(repository.listSentOrders(db, 'penha', { updatedAfter: cursorAfterChanges }).length, 0);
+
+const canceledOrder = repository.cancelOrder(db, printedOrder.id, printedOrder.version);
+assert.equal(repository.listReceivedOrders(db, 'gravata').length, 0);
+const receivedChanges = repository.listReceivedOrders(db, 'gravata', { updatedAfter: cursorBeforeChanges });
+assert.equal(receivedChanges.length, 1);
+assert.equal(receivedChanges[0].status, canceledOrder.status);
+
+const settingsPatch = repository.updateStoreSettings(db, 'penha', {
+  keywords: [{ word: 'teste' }],
+  finallyStoragePreview: { dataUrl: 'data:image/png;base64,nao-deve-persistir' }
+});
+assert.deepEqual(settingsPatch.keywords, [{ word: 'teste' }]);
+assert.equal(Object.hasOwn(settingsPatch, 'catalogs'), false);
+assert.equal(Object.hasOwn(repository.getStoreSettings(db, 'penha'), 'finallyStoragePreview'), false);
+assert.equal(
+  db.prepare('SELECT finally_storage_preview FROM store_settings WHERE store_id = ?').get('penha').finally_storage_preview,
+  '{}'
+);
+
 console.log('routing.test.js OK');

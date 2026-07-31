@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../../shared/ui/Icon';
 import { confirmAction, showAppAlert } from '../../shared/ui/appDialog';
@@ -33,6 +33,25 @@ const TABS = [
   { id: 'received', label: 'Fila recebida' },
   { id: 'sent', label: 'Enviados' }
 ];
+
+const ORDER_LIST_LIMIT = 200;
+
+const mergeOrderChanges = (currentOrders = [], changedOrders = [], options = {}) => {
+  const byId = new Map(currentOrders.map((order) => [order.id, order]));
+
+  changedOrders.forEach((order) => {
+    if (!order?.id) return;
+    if (options.removeCanceled && order.status === 'cancelado') {
+      byId.delete(order.id);
+      return;
+    }
+    byId.set(order.id, order);
+  });
+
+  return Array.from(byId.values())
+    .sort((left, right) => getTimestamp(right.createdAt) - getTimestamp(left.createdAt))
+    .slice(0, ORDER_LIST_LIMIT);
+};
 
 const formatDateTime = (value) => {
   if (!value) return '-';
@@ -387,6 +406,7 @@ export function OrderRouting() {
   const [feedbackType, setFeedbackType] = useState('success');
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState('');
+  const sentOrdersCursorRef = useRef('');
 
   const currentStore = me?.store;
   const allowedTargets = routePreview?.allowedTargets || me?.allowedTargets || [];
@@ -432,19 +452,25 @@ export function OrderRouting() {
     }
   };
 
-  const loadOrders = async ({ includeSettings = false } = {}) => {
+  const loadOrders = async ({
+    includeSettings = false,
+    includeReceived = true,
+    includeSent = true
+  } = {}) => {
     if (!getCurrentStoreId()) return;
 
     try {
-      const requests = [
-        routingApi.listReceivedOrders(),
-        routingApi.listSentOrders()
-      ];
-      if (includeSettings) requests.push(loadStoreSettings());
+      const [received, sent, settings] = await Promise.all([
+        includeReceived ? routingApi.listReceivedOrders() : Promise.resolve(null),
+        includeSent ? routingApi.listSentOrders() : Promise.resolve(null),
+        includeSettings ? loadStoreSettings() : Promise.resolve(null)
+      ]);
 
-      const [received, sent, settings] = await Promise.all(requests);
-      setReceivedOrders(received.orders || []);
-      setSentOrders(sent.orders || []);
+      if (received) setReceivedOrders(received.orders || []);
+      if (sent) {
+        setSentOrders(sent.orders || []);
+        sentOrdersCursorRef.current = sent.cursor || sentOrdersCursorRef.current;
+      }
       if (settings) setSentCashClearedAt(settings.sentCashClearedAt || '');
     } catch (err) {
       setApiError(err.message);
@@ -453,6 +479,7 @@ export function OrderRouting() {
 
   useEffect(() => {
     if (!currentStoreId) return;
+    sentOrdersCursorRef.current = '';
     void loadMe();
     void loadOrders({ includeSettings: true });
   }, [currentStoreId]);
@@ -693,9 +720,26 @@ export function OrderRouting() {
   useEffect(() => {
     if (!currentStoreId) return undefined;
 
+    const pollSentOrderChanges = async () => {
+      try {
+        const payload = await routingApi.listSentOrders({
+          updatedAfter: sentOrdersCursorRef.current
+        });
+        const changes = Array.isArray(payload.orders) ? payload.orders : [];
+        if (payload.incremental) {
+          if (changes.length) setSentOrders((current) => mergeOrderChanges(current, changes));
+        } else {
+          setSentOrders(changes);
+        }
+        sentOrdersCursorRef.current = payload.cursor || sentOrdersCursorRef.current;
+      } catch (err) {
+        setApiError(err.message);
+      }
+    };
+
     const timer = window.setInterval(() => {
-      void loadOrders();
-    }, 30000);
+      void pollSentOrderChanges();
+    }, 60000);
 
     return () => window.clearInterval(timer);
   }, [currentStoreId]);
@@ -703,7 +747,15 @@ export function OrderRouting() {
   useEffect(() => {
     const handleReceivedOrdersUpdate = (event) => {
       if (Array.isArray(event.detail?.orders)) {
-        setReceivedOrders(event.detail.orders);
+        if (event.detail.incremental) {
+          if (event.detail.orders.length) {
+            setReceivedOrders((current) => mergeOrderChanges(current, event.detail.orders, {
+              removeCanceled: true
+            }));
+          }
+        } else {
+          setReceivedOrders(event.detail.orders);
+        }
       }
     };
 
@@ -1227,7 +1279,11 @@ export function OrderRouting() {
             className={activeTab === tab.id ? 'active' : ''}
             onClick={() => {
               setActiveTab(tab.id);
-              if (tab.id === 'received' || tab.id === 'sent') void loadOrders();
+              if (tab.id === 'received') {
+                void loadOrders({ includeSent: false });
+              } else if (tab.id === 'sent') {
+                void loadOrders({ includeReceived: false });
+              }
             }}
           >
             {tab.label}

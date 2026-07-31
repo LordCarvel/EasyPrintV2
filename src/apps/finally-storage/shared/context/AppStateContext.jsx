@@ -34,13 +34,6 @@ export function AppStateProvider({ children }) {
         if (settings.finallyStorageState && typeof settings.finallyStorageState === 'object') {
           setAppState(normalizeAppState(settings.finallyStorageState));
         }
-
-        if (settings.finallyStoragePreview && typeof settings.finallyStoragePreview === 'object') {
-          setPreviewImage({
-            dataUrl: String(settings.finallyStoragePreview.dataUrl || ''),
-            generatedAt: String(settings.finallyStoragePreview.generatedAt || '')
-          });
-        }
       })
       .catch((error) => {
         console.warn('Usando fechamento local porque o perfil da loja nao carregou', error);
@@ -80,12 +73,6 @@ export function AppStateProvider({ children }) {
 
   useEffect(() => {
     savePreviewImage(previewImage);
-
-    if (!profileHydratedRef.current) return;
-
-    void saveStoreSettingsPatch({ finallyStoragePreview: previewImage }).catch((error) => {
-      console.error('Falha ao salvar previa do Finally Storage no perfil da loja', error);
-    });
   }, [previewImage]);
 
   const updateState = (updater) => {

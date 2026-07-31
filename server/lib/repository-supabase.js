@@ -116,6 +116,21 @@ const orderSelect = `
   target_store:stores!orders_target_store_id_fkey(name)
 `;
 
+// A previa do Finally Storage pode conter uma imagem base64 de varios MB.
+// Ela e mantida apenas no dispositivo e nunca deve acompanhar leituras comuns.
+const settingsSelect = `
+  store_id,
+  keywords,
+  catalogs,
+  print_template,
+  cash_orders,
+  cash_processed,
+  sent_cash_cleared_at,
+  delivery_board_state,
+  finally_storage_state,
+  updated_at
+`;
+
 const rowToStore = (row) => row && ({
   id: row.id,
   name: row.name,
@@ -267,9 +282,34 @@ const rowToSettings = (row, storeId = '') => {
     sentCashClearedAt: row?.sent_cash_cleared_at || '',
     deliveryBoardState: toJsonObject(parseJsonValue(row?.delivery_board_state, {})),
     finallyStorageState,
-    finallyStoragePreview: toJsonObject(parseJsonValue(row?.finally_storage_preview, {})),
     updatedAt: row?.updated_at || ''
   };
+};
+
+const getOperationalCleanupAt = async (db) => {
+  const { data, error } = await db.from('easyprint_maintenance_state')
+    .select('last_run_at')
+    .eq('job_name', 'easyprint-retention-cleanup')
+    .maybeSingle();
+
+  // Permite implantar o backend antes de reaplicar retention-cleanup.sql.
+  if (error && ['42P01', 'PGRST205'].includes(error.code)) return '';
+  throwIfError(error);
+  return normalizeOptionalIso(data?.last_run_at) || '';
+};
+
+const hasOperationalSettingsPatch = (input = {}) => [
+  'cashOrders',
+  'cashProcessed',
+  'sentCashClearedAt',
+  'deliveryBoardState',
+  'finallyStorageState',
+  'finallyStoragePreview'
+].some((field) => input[field] !== undefined);
+
+const normalizeUpdatedAfter = (value) => {
+  const timestamp = new Date(String(value || '')).getTime();
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : '';
 };
 
 export const openDatabase = () => {
@@ -439,57 +479,109 @@ export const ensureStoreSettings = async (db, storeId) => {
 
 export const getStoreSettings = async (db, storeId) => {
   await ensureStoreSettings(db, storeId);
-  const row = await readOne(
-    db.from('store_settings')
-      .select('*')
-      .eq('store_id', storeId)
-  );
-  return rowToSettings(row, storeId);
+  const [row, operationalCleanupAt] = await Promise.all([
+    readOne(
+      db.from('store_settings')
+        .select(settingsSelect)
+        .eq('store_id', storeId)
+    ),
+    getOperationalCleanupAt(db)
+  ]);
+  return {
+    ...rowToSettings(row, storeId),
+    operationalCleanupAt
+  };
 };
 
 export const updateStoreSettings = async (db, storeId, input = {}) => {
   await ensureStoreSettings(db, storeId);
-  const current = await getStoreSettings(db, storeId);
-  const next = {
-    keywords: input.keywords === undefined ? current.keywords : input.keywords,
-    catalogs: input.catalogs === undefined ? current.catalogs : input.catalogs,
-    printTemplate: input.printTemplate === undefined ? current.printTemplate : input.printTemplate,
-    cashOrders: input.cashOrders === undefined ? current.cashOrders : input.cashOrders,
-    cashProcessed: input.cashProcessed === undefined ? current.cashProcessed : input.cashProcessed,
-    sentCashClearedAt: input.sentCashClearedAt === undefined
-      ? current.sentCashClearedAt
-      : normalizeOptionalIso(input.sentCashClearedAt),
-    deliveryBoardState: input.deliveryBoardState === undefined ? current.deliveryBoardState : input.deliveryBoardState,
-    finallyStorageState: input.finallyStorageState === undefined ? current.finallyStorageState : input.finallyStorageState,
-    finallyStoragePreview: input.finallyStoragePreview === undefined ? current.finallyStoragePreview : input.finallyStoragePreview
-  };
+  const updatedAt = nowIso();
+  const updatePayload = { updated_at: updatedAt };
+  const settingsPatch = { storeId, updatedAt };
 
-  next.finallyStorageState = syncFinallyStorageWithEasyPrintCash(next.finallyStorageState, next.cashOrders);
-
-  const updatePayload = {
-    keywords: next.keywords,
-    catalogs: next.catalogs,
-    print_template: next.printTemplate,
-    cash_orders: next.cashOrders,
-    cash_processed: next.cashProcessed,
-    delivery_board_state: next.deliveryBoardState,
-    finally_storage_state: next.finallyStorageState,
-    finally_storage_preview: next.finallyStoragePreview,
-    updated_at: nowIso()
-  };
-
-  if (input.sentCashClearedAt !== undefined || current.sentCashClearedAt) {
-    updatePayload.sent_cash_cleared_at = next.sentCashClearedAt || null;
+  if (hasOperationalSettingsPatch(input)) {
+    const operationalCleanupAt = await getOperationalCleanupAt(db);
+    const expectedCleanupAt = normalizeOptionalIso(input.operationalCleanupAt) || '';
+    if (operationalCleanupAt && expectedCleanupAt !== operationalCleanupAt) {
+      const error = new Error('Os dados operacionais foram limpos. Recarregue antes de salvar novamente.');
+      error.statusCode = 409;
+      error.code = 'OPERATIONAL_DATA_RESET';
+      error.operationalCleanupAt = operationalCleanupAt;
+      throw error;
+    }
+    settingsPatch.operationalCleanupAt = operationalCleanupAt;
   }
 
-  const row = await readOne(
-    db.from('store_settings')
-      .update(updatePayload)
-      .eq('store_id', storeId)
-      .select('*')
-  );
+  if (input.keywords !== undefined) {
+    settingsPatch.keywords = toJsonArray(input.keywords);
+    updatePayload.keywords = settingsPatch.keywords;
+  }
+  if (input.catalogs !== undefined) {
+    settingsPatch.catalogs = toJsonArray(input.catalogs);
+    updatePayload.catalogs = settingsPatch.catalogs;
+  }
+  if (input.printTemplate !== undefined) {
+    settingsPatch.printTemplate = toJsonObject(input.printTemplate);
+    updatePayload.print_template = settingsPatch.printTemplate;
+  }
+  if (input.cashProcessed !== undefined) {
+    settingsPatch.cashProcessed = toJsonArray(input.cashProcessed);
+    updatePayload.cash_processed = settingsPatch.cashProcessed;
+  }
+  if (input.sentCashClearedAt !== undefined) {
+    settingsPatch.sentCashClearedAt = normalizeOptionalIso(input.sentCashClearedAt);
+    updatePayload.sent_cash_cleared_at = settingsPatch.sentCashClearedAt || null;
+  }
+  if (input.deliveryBoardState !== undefined) {
+    settingsPatch.deliveryBoardState = toJsonObject(input.deliveryBoardState);
+    updatePayload.delivery_board_state = settingsPatch.deliveryBoardState;
+  }
 
-  return rowToSettings(row, storeId);
+  // O estado do caixa e o fechamento sao sincronizados entre si. Para esses
+  // dois campos, le somente as colunas necessarias em vez da linha completa.
+  if (input.cashOrders !== undefined || input.finallyStorageState !== undefined) {
+    let currentCashOrders = [];
+    let currentFinallyStorageState = {};
+
+    if (input.cashOrders === undefined || input.finallyStorageState === undefined) {
+      const missingColumns = [];
+      if (input.cashOrders === undefined) missingColumns.push('cash_orders');
+      if (input.finallyStorageState === undefined) missingColumns.push('finally_storage_state');
+      const current = await readOne(
+        db.from('store_settings')
+          .select(missingColumns.join(', '))
+          .eq('store_id', storeId)
+      );
+      currentCashOrders = toJsonArray(parseJsonValue(current?.cash_orders, []));
+      currentFinallyStorageState = toJsonObject(parseJsonValue(current?.finally_storage_state, {}));
+    }
+
+    const nextCashOrders = input.cashOrders === undefined
+      ? currentCashOrders
+      : toJsonArray(input.cashOrders);
+    const requestedFinallyState = input.finallyStorageState === undefined
+      ? currentFinallyStorageState
+      : toJsonObject(input.finallyStorageState);
+    const nextFinallyState = syncFinallyStorageWithEasyPrintCash(requestedFinallyState, nextCashOrders);
+
+    if (input.cashOrders !== undefined) {
+      settingsPatch.cashOrders = nextCashOrders;
+      updatePayload.cash_orders = nextCashOrders;
+    }
+    settingsPatch.finallyStorageState = nextFinallyState;
+    updatePayload.finally_storage_state = nextFinallyState;
+  }
+
+  // Remove qualquer previa base64 legada na primeira atualizacao feita pela
+  // loja. Clientes antigos tambem deixam de conseguir persisti-la novamente.
+  updatePayload.finally_storage_preview = {};
+
+  const { error } = await db.from('store_settings')
+    .update(updatePayload)
+    .eq('store_id', storeId);
+  throwIfError(error);
+
+  return settingsPatch;
 };
 
 export const listConnectionsFrom = async (db, sourceStoreId) => {
@@ -634,30 +726,40 @@ export const getOrder = async (db, orderId) => {
   return rowToOrder(row);
 };
 
-export const listReceivedOrders = async (db, storeId) => {
+export const listReceivedOrders = async (db, storeId, options = {}) => {
   const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const rows = await readMany(
-    db.from('orders')
-      .select(orderSelect)
-      .eq('target_store_id', storeId)
-      .neq('status', ORDER_STATUS.CANCELED)
-      .gte('created_at', retentionCutoff)
-      .order('created_at', { ascending: false })
-      .limit(ORDER_LIST_LIMIT)
-  );
+  const updatedAfter = normalizeUpdatedAfter(options.updatedAfter);
+  let query = db.from('orders')
+    .select(orderSelect)
+    .eq('target_store_id', storeId)
+    .gte('created_at', retentionCutoff)
+    .order('created_at', { ascending: false })
+    .limit(ORDER_LIST_LIMIT);
+
+  if (updatedAfter) {
+    // Inclui cancelados no delta para o cliente conseguir removê-los da fila.
+    query = query.gt('updated_at', updatedAfter);
+  } else {
+    query = query.neq('status', ORDER_STATUS.CANCELED);
+  }
+
+  const rows = await readMany(query);
   return rows.map(rowToOrder);
 };
 
-export const listSentOrders = async (db, storeId) => {
+export const listSentOrders = async (db, storeId, options = {}) => {
   const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const rows = await readMany(
-    db.from('orders')
-      .select(orderSelect)
-      .eq('source_store_id', storeId)
-      .gte('created_at', retentionCutoff)
-      .order('created_at', { ascending: false })
-      .limit(ORDER_LIST_LIMIT)
-  );
+  const updatedAfter = normalizeUpdatedAfter(options.updatedAfter);
+  let query = db.from('orders')
+    .select(orderSelect)
+    .eq('source_store_id', storeId)
+    .gte('created_at', retentionCutoff)
+    .order('created_at', { ascending: false })
+    .limit(ORDER_LIST_LIMIT);
+
+  if (updatedAfter) query = query.gt('updated_at', updatedAfter);
+
+  const rows = await readMany(query);
   return rows.map(rowToOrder);
 };
 

@@ -8,6 +8,9 @@ const HOST = process.env.ROUTING_API_HOST || (process.env.PORT ? '0.0.0.0' : '12
 const CONFIGURED_CORS_ORIGIN = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || '*';
 const DESKTOP_CORS_ORIGINS = ['easyhub://app'];
 const dataStore = await createDataStore();
+const SESSION_CACHE_TTL_MS = 60 * 1000;
+const SESSION_CACHE_MAX_ENTRIES = 500;
+const sessionStoreCache = new Map();
 
 const parseCorsOrigins = (value) =>
   String(value || '')
@@ -80,6 +83,28 @@ const splitAreasInput = (value) => {
 
 const getSessionToken = (request) => String(request.headers['x-session-token'] || '').trim();
 
+const getCachedSessionStore = (token) => {
+  const cached = sessionStoreCache.get(token);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    sessionStoreCache.delete(token);
+    return null;
+  }
+  return cached.store;
+};
+
+const cacheSessionStore = (token, store) => {
+  if (!token || !store) return;
+  if (sessionStoreCache.size >= SESSION_CACHE_MAX_ENTRIES) {
+    const oldestToken = sessionStoreCache.keys().next().value;
+    if (oldestToken) sessionStoreCache.delete(oldestToken);
+  }
+  sessionStoreCache.set(token, {
+    store,
+    expiresAt: Date.now() + SESSION_CACHE_TTL_MS
+  });
+};
+
 const requireCurrentStore = async (request, response) => {
   const token = getSessionToken(request);
 
@@ -88,7 +113,11 @@ const requireCurrentStore = async (request, response) => {
     return null;
   }
 
-  const store = await dataStore.getSessionStore(token);
+  let store = getCachedSessionStore(token);
+  if (!store) {
+    store = await dataStore.getSessionStore(token);
+    if (store) cacheSessionStore(token, store);
+  }
   if (!store) {
     sendError(request, response, 401, 'Sessao expirada. Entre novamente com usuario e senha da loja.');
     return null;
@@ -201,6 +230,7 @@ const handleAuthLogin = async (request, response) => {
     return true;
   }
 
+  cacheSessionStore(session.token, session.store);
   sendJson(request, response, 200, session);
   return true;
 };
@@ -210,6 +240,7 @@ const handleAuthLogout = async (request, response) => {
 
   const token = getSessionToken(request);
   if (token) await dataStore.logoutSession(token);
+  sessionStoreCache.delete(token);
   sendJson(request, response, 200, { ok: true });
   return true;
 };
@@ -244,6 +275,7 @@ const handleMyStore = async (request, response) => {
     autoPrint: body.autoPrint
   });
 
+  cacheSessionStore(getSessionToken(request), updated);
   sendJson(request, response, 200, { store: updated });
   return true;
 };
@@ -352,19 +384,37 @@ const handleCreateOrder = async (request, response) => {
   return true;
 };
 
-const handleOrdersCollection = async (request, response, kind) => {
+const handleOrdersCollection = async (request, response, kind, url) => {
   const currentStore = await requireCurrentStore(request, response);
   if (!currentStore) return true;
 
   if (request.method !== 'GET') return false;
 
+  const rawUpdatedAfter = String(url.searchParams.get('updatedAfter') || '').trim();
+  const updatedTimestamp = new Date(rawUpdatedAfter).getTime();
+  const updatedAfter = rawUpdatedAfter && Number.isFinite(updatedTimestamp)
+    ? new Date(updatedTimestamp).toISOString()
+    : '';
+  const options = { updatedAfter };
+  // O cursor usa o relogio do backend, o mesmo que grava updated_at. Captura-lo
+  // antes da consulta evita perder uma alteracao feita durante a requisicao.
+  const cursor = new Date().toISOString();
+
   if (kind === 'received') {
-    sendJson(request, response, 200, { orders: await dataStore.listReceivedOrders(currentStore.id) });
+    sendJson(request, response, 200, {
+      orders: await dataStore.listReceivedOrders(currentStore.id, options),
+      incremental: Boolean(updatedAfter),
+      cursor
+    });
     return true;
   }
 
   if (kind === 'sent') {
-    sendJson(request, response, 200, { orders: await dataStore.listSentOrders(currentStore.id) });
+    sendJson(request, response, 200, {
+      orders: await dataStore.listSentOrders(currentStore.id, options),
+      incremental: Boolean(updatedAfter),
+      cursor
+    });
     return true;
   }
 
@@ -521,8 +571,8 @@ const handleRequest = async (request, response) => {
 
     if (pathname === '/api/orders/parse-route' && await handleParseRoute(request, response)) return;
     if (pathname === '/api/orders' && await handleCreateOrder(request, response)) return;
-    if (pathname === '/api/orders/received' && await handleOrdersCollection(request, response, 'received')) return;
-    if (pathname === '/api/orders/sent' && await handleOrdersCollection(request, response, 'sent')) return;
+    if (pathname === '/api/orders/received' && await handleOrdersCollection(request, response, 'received', url)) return;
+    if (pathname === '/api/orders/sent' && await handleOrdersCollection(request, response, 'sent', url)) return;
 
     const orderMatch = pathname.match(/^\/api\/orders\/([^/]+)(?:\/([^/]+))?$/);
     if (orderMatch && await handleOrderById(
@@ -537,6 +587,13 @@ const handleRequest = async (request, response) => {
     console.error(error);
     if (error.code === 'ORDER_VERSION_CONFLICT') {
       sendOrderVersionConflict(request, response, error);
+      return;
+    }
+    if (error.code === 'OPERATIONAL_DATA_RESET') {
+      sendError(request, response, 409, error.message, {
+        code: error.code,
+        operationalCleanupAt: error.operationalCleanupAt || ''
+      });
       return;
     }
     sendError(request, response, error.statusCode || 500, error.message || 'Erro interno.');

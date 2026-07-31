@@ -2,20 +2,33 @@
 
 Arquitetura:
 
-- Frontend: GitHub Pages, build estatico Vite em `dist`.
+- Frontend: GitHub Pages ou Electron, build estatico Vite em `dist`.
 - Backend: Render Web Service executando `npm start`.
 - Banco: Supabase Postgres acessado apenas pelo backend.
+
+## Modo local temporario
+
+O build atual usa `VITE_DATA_MODE=local` por padrao. Nesse modo o frontend nao
+faz chamadas ao Render/Supabase: perfis, configuracoes e pedidos locais ficam no
+`localStorage` de cada computador. Pedidos nao atravessam entre computadores.
+
+Quando o banco estiver disponivel novamente, defina `VITE_DATA_MODE=remote` no
+build do frontend para voltar a usar a arquitetura descrita abaixo.
 
 ## 1. Supabase
 
 1. Crie um projeto no Supabase.
 2. Abra SQL Editor.
 3. Rode o conteudo de `supabase/schema.sql`.
-4. Rode o conteudo de `supabase/retention-cleanup.sql` para manter somente dois dias
-   de dados operacionais. Perfis, conexoes, palavras-chave, catalogos, modelos de
-   impressao, motoboys e configuracoes das ferramentas sao preservados.
-4. Em Data API/API settings, confirme que o schema `public` esta exposto.
-5. Copie:
+4. Rode o conteudo de `supabase/retention-cleanup.sql`. Ele zera pedidos e dados
+   operacionais a cada dois dias, preservando perfis, conexoes, palavras-chave,
+   catalogos, modelos de impressao, motoboys e configuracoes das ferramentas.
+   A ultima previa em imagem do Finally Storage fica somente no computador.
+5. Confirme no resultado do SQL que `easyprint-retention-cleanup` aparece com
+   `active = true`. Reaplique esse arquivo sempre que ele mudar no repositorio;
+   o deploy do frontend/backend nao executa SQL no Supabase.
+6. Em Data API/API settings, confirme que o schema `public` esta exposto.
+7. Copie:
    - Project URL: `SUPABASE_URL`
    - Service role key ou secret key: `SUPABASE_SERVICE_ROLE_KEY`
 
@@ -25,7 +38,13 @@ Atualizacao de banco em projeto existente:
 
 ```sql
 -- Rode o conteudo de supabase/order-version-migration.sql antes de subir backend com controle de versao.
+-- Reaplique tambem todo o conteudo de supabase/retention-cleanup.sql.
 ```
+
+Se o projeto estiver respondendo HTTP 402 por `exceed_egress_quota`, primeiro
+aguarde a renovacao do ciclo ou restaure o acesso pelo Billing do Supabase. O SQL
+de limpeza e as consultas de verificacao nao conseguem rodar enquanto o servico
+estiver restrito.
 
 ## 2. Render
 

@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './shared/ui/Icon';
 import { StoreProfileProvider, useStoreProfile } from './shared/storeProfile/StoreProfileContext';
-import { routingApi } from './features/routing/routingApi';
+import { LOCAL_DATA_MODE, routingApi } from './features/routing/routingApi';
 import { isResentOrder, printRoutedOrderText } from './features/routing/directOrderPrint';
 import { showAppAlert } from './shared/ui/appDialog';
 import './App.css';
@@ -134,12 +134,14 @@ function ReceivedOrderMonitor() {
   const [notice, setNotice] = useState(null);
   const seenOrderIdsRef = useRef(new Set());
   const queuedPrintIdsRef = useRef(new Set());
+  const pollCursorRef = useRef('');
   const hydratedRef = useRef(false);
   const noticeTimerRef = useRef(null);
 
   useEffect(() => {
     seenOrderIdsRef.current = new Set();
     queuedPrintIdsRef.current = new Set();
+    pollCursorRef.current = '';
     hydratedRef.current = false;
     setNotice(null);
   }, [store?.id]);
@@ -219,12 +221,15 @@ function ReceivedOrderMonitor() {
 
     const pollReceivedOrders = async () => {
       try {
-        const payload = await routingApi.listReceivedOrders();
+        const payload = await routingApi.listReceivedOrders({
+          updatedAfter: pollCursorRef.current
+        });
         if (stopped) return;
+        pollCursorRef.current = payload.cursor || pollCursorRef.current;
 
         const orders = payload.orders || [];
         window.dispatchEvent(new CustomEvent('easyhubReceivedOrdersUpdated', {
-          detail: { orders }
+          detail: { orders, incremental: Boolean(payload.incremental) }
         }));
 
         if (!hydratedRef.current) {
@@ -485,7 +490,7 @@ function ProjectHub() {
         <div className="project-sidebar-footer">
           <span>Projeto ativo</span>
           <strong>{activeProject.name}</strong>
-          <small>Perfil geral sincronizado</small>
+          <small>{LOCAL_DATA_MODE ? 'Dados salvos neste computador' : 'Perfil geral sincronizado'}</small>
           <button type="button" onClick={() => setAccountOpen(true)}>
             Atualizar app
           </button>
@@ -513,7 +518,11 @@ function ProjectHub() {
             <div className="account-modal-header">
               <div>
                 <h2>Conta da loja</h2>
-                <p>Essas informacoes valem para Easy Print, Delivery Board e Finally Storage.</p>
+                <p>
+                  {LOCAL_DATA_MODE
+                    ? 'Modo local: estas informacoes ficam somente neste computador.'
+                    : 'Essas informacoes valem para Easy Print, Delivery Board e Finally Storage.'}
+                </p>
               </div>
               <button type="button" onClick={() => setAccountOpen(false)} aria-label="Fechar configuracoes da conta">
                 <Icon name="close" size={16} />
