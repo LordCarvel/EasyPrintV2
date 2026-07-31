@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { URL } from 'node:url';
 import { createDataStore } from './lib/data-store.js';
+import { createOrderRelayAuth } from './lib/order-relay-auth.js';
 import { ORDER_STATUS, parseIfoodOrder, routeOrder } from './lib/routing-core.js';
 
 const PORT = Number(process.env.PORT || process.env.ROUTING_API_PORT || 3333);
@@ -8,6 +9,7 @@ const HOST = process.env.ROUTING_API_HOST || (process.env.PORT ? '0.0.0.0' : '12
 const CONFIGURED_CORS_ORIGIN = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || '*';
 const DESKTOP_CORS_ORIGINS = ['easyhub://app'];
 const dataStore = await createDataStore();
+const orderRelayAuth = createOrderRelayAuth({ secret: process.env.ORDER_RELAY_SECRET });
 const SESSION_CACHE_TTL_MS = 60 * 1000;
 const SESSION_CACHE_MAX_ENTRIES = 500;
 const sessionStoreCache = new Map();
@@ -114,6 +116,11 @@ const requireCurrentStore = async (request, response) => {
   }
 
   let store = getCachedSessionStore(token);
+  const relayStoreId = orderRelayAuth.verify(token);
+  if (!store && relayStoreId) {
+    store = await dataStore.getStore(relayStoreId);
+    if (store) cacheSessionStore(token, store);
+  }
   if (!store) {
     store = await dataStore.getSessionStore(token);
     if (store) cacheSessionStore(token, store);
@@ -124,6 +131,30 @@ const requireCurrentStore = async (request, response) => {
   }
 
   return store;
+};
+
+const handleOrderRelaySession = async (request, response) => {
+  if (request.method !== 'POST') return false;
+
+  const body = await readJsonBody(request);
+  const storeId = String(body.storeId || '').trim();
+  const store = storeId ? await dataStore.getStore(storeId) : null;
+
+  if (!store) {
+    sendError(request, response, 404, 'Esta loja nao esta cadastrada no canal de pedidos.');
+    return true;
+  }
+
+  const token = orderRelayAuth.issue(store.id);
+  cacheSessionStore(token, store);
+  sendJson(request, response, 200, {
+    token,
+    store: {
+      id: store.id,
+      name: store.name
+    }
+  });
+  return true;
 };
 
 const buildMePayload = async (currentStore) => {
@@ -541,10 +572,11 @@ const handleRequest = async (request, response) => {
 
   try {
     if (pathname === '/health') {
-      sendJson(request, response, 200, { ok: true });
+      sendJson(request, response, 200, { ok: true, orderStore: dataStore.mode });
       return;
     }
 
+    if (pathname === '/api/order-relay/session' && await handleOrderRelaySession(request, response)) return;
     if (pathname === '/api/auth/login' && await handleAuthLogin(request, response)) return;
     if (pathname === '/api/auth/logout' && await handleAuthLogout(request, response)) return;
     if (pathname === '/api/setup/stores' && await handleSetupStores(request, response)) return;

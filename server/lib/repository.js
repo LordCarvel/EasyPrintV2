@@ -8,6 +8,12 @@ const ORDER_RETENTION_DAYS = 2;
 const ORDER_LIST_LIMIT = 200;
 const ORDER_VERSION_CONFLICT_MESSAGE = 'Esse pedido foi atualizado em outra maquina. Recarregue a fila.';
 
+const purgeExpiredOrders = (db) => {
+  const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM orders WHERE created_at < ?').run(retentionCutoff);
+  return retentionCutoff;
+};
+
 const createOrderConflictError = (order = null) => {
   const error = new Error(ORDER_VERSION_CONFLICT_MESSAGE);
   error.statusCode = 409;
@@ -466,6 +472,7 @@ export const canSendToStore = (db, sourceStoreId, targetStoreId) => {
 };
 
 export const createOrder = (db, input) => {
+  purgeExpiredOrders(db);
   const now = nowIso();
   const existing = findRecentOrderForResend(db, input);
 
@@ -532,7 +539,7 @@ export const getOrder = (db, orderId) =>
   rowToOrder(db.prepare(`SELECT ${orderSelect} WHERE o.id = ?`).get(orderId));
 
 export const listReceivedOrders = (db, storeId, options = {}) => {
-  const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const retentionCutoff = purgeExpiredOrders(db);
   const updatedAfter = normalizeOptionalIso(options.updatedAfter) || '';
 
   if (updatedAfter) {
@@ -557,7 +564,7 @@ export const listReceivedOrders = (db, storeId, options = {}) => {
 };
 
 export const listSentOrders = (db, storeId, options = {}) => {
-  const retentionCutoff = new Date(Date.now() - ORDER_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const retentionCutoff = purgeExpiredOrders(db);
   const updatedAfter = normalizeOptionalIso(options.updatedAfter) || '';
 
   if (updatedAfter) {

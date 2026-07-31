@@ -21,13 +21,15 @@ npm install
 npm run dev
 ```
 
-## Modo local temporario
+## Modo hibrido temporario
 
-O app usa `localStorage` por padrao e funciona sem Render ou Supabase. Perfis,
-configuracoes, caixa, motoboys e filas locais ficam salvos no computador.
+O app usa `localStorage` para perfis, senhas, configuracoes, caixa, motoboys e
+dados das ferramentas. Somente pedidos, eventos e status passam pelo servidor
+do Render para circular entre os computadores das filiais.
 
-Sem um servidor, pedidos roteados nao sao compartilhados entre computadores.
-Para reativar o backend no futuro, gere o frontend com `VITE_DATA_MODE=remote`.
+O servidor usa uma fila SQLite transitoria com retencao de dois dias e nao
+acessa o Supabase por padrao. Use `VITE_DATA_MODE=local` apenas para trabalhar
+totalmente offline, sem compartilhar pedidos.
 
 ## Build
 
@@ -37,7 +39,7 @@ npm run build
 
 ## Deploy
 
-O deploy em GitHub Pages + Render + Supabase esta documentado em [DEPLOY.md](DEPLOY.md).
+O deploy em GitHub Pages + Render esta documentado em [DEPLOY.md](DEPLOY.md).
 
 ## Estrutura
 

@@ -13,7 +13,7 @@ services:
         value: production
       - key: CORS_ORIGIN
         value: https://lordcarvel.github.io,easyhub://app
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
+      - key: ROUTING_STORE_MODE
+        value: sqlite
+      - key: ROUTING_DB_PATH
+        value: /tmp/easyprint-routing.sqlite

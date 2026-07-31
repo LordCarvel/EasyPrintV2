@@ -1,64 +1,39 @@
-# Deploy: GitHub Pages + Render + Supabase
+# Deploy: GitHub Pages + Render
 
 Arquitetura:
 
 - Frontend: GitHub Pages ou Electron, build estatico Vite em `dist`.
 - Backend: Render Web Service executando `npm start`.
-- Banco: Supabase Postgres acessado apenas pelo backend.
+- Fila de pedidos: SQLite transitorio no Render, com retencao de dois dias.
+- Perfis e configuracoes: `localStorage` de cada computador.
 
-## Modo local temporario
+## Modo hibrido padrao
 
-O build atual usa `VITE_DATA_MODE=local` por padrao. Nesse modo o frontend nao
-faz chamadas ao Render/Supabase: perfis, configuracoes e pedidos locais ficam no
-`localStorage` de cada computador. Pedidos nao atravessam entre computadores.
+O build usa `VITE_DATA_MODE=hybrid` por padrao. Perfis, senhas, configuracoes,
+caixa, motoboys, Delivery Board e Finally Storage ficam no navegador. Somente
+pedidos, eventos e status usam o backend para atravessar entre computadores.
 
-Quando o banco estiver disponivel novamente, defina `VITE_DATA_MODE=remote` no
-build do frontend para voltar a usar a arquitetura descrita abaixo.
+Use `VITE_DATA_MODE=local` para um build totalmente offline. O modo legado
+`VITE_DATA_MODE=remote` continua disponivel, mas volta a sincronizar perfis e
+configuracoes e nao e recomendado enquanto houver limite de egress.
 
-## 1. Supabase
-
-1. Crie um projeto no Supabase.
-2. Abra SQL Editor.
-3. Rode o conteudo de `supabase/schema.sql`.
-4. Rode o conteudo de `supabase/retention-cleanup.sql`. Ele zera pedidos e dados
-   operacionais a cada dois dias, preservando perfis, conexoes, palavras-chave,
-   catalogos, modelos de impressao, motoboys e configuracoes das ferramentas.
-   A ultima previa em imagem do Finally Storage fica somente no computador.
-5. Confirme no resultado do SQL que `easyprint-retention-cleanup` aparece com
-   `active = true`. Reaplique esse arquivo sempre que ele mudar no repositorio;
-   o deploy do frontend/backend nao executa SQL no Supabase.
-6. Em Data API/API settings, confirme que o schema `public` esta exposto.
-7. Copie:
-   - Project URL: `SUPABASE_URL`
-   - Service role key ou secret key: `SUPABASE_SERVICE_ROLE_KEY`
-
-Nao coloque a service role key em GitHub Pages, `VITE_*`, codigo frontend ou commits.
-
-Atualizacao de banco em projeto existente:
-
-```sql
--- Rode o conteudo de supabase/order-version-migration.sql antes de subir backend com controle de versao.
--- Reaplique tambem todo o conteudo de supabase/retention-cleanup.sql.
-```
-
-Se o projeto estiver respondendo HTTP 402 por `exceed_egress_quota`, primeiro
-aguarde a renovacao do ciclo ou restaure o acesso pelo Billing do Supabase. O SQL
-de limpeza e as consultas de verificacao nao conseguem rodar enquanto o servico
-estiver restrito.
-
-## 2. Render
+## 1. Render
 
 1. Suba este repositorio para o GitHub.
 2. No Render, crie um Blueprint a partir do `render.yaml`.
-3. Preencha os secrets marcados como `sync: false`:
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY`
+3. Confirme `ROUTING_STORE_MODE=sqlite` e `ROUTING_DB_PATH=/tmp/easyprint-routing.sqlite`.
 4. Confirme `CORS_ORIGIN=https://lordcarvel.github.io,easyhub://app`.
-5. Depois do deploy, teste:
+5. Variaveis antigas `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` podem ser removidas.
+6. Depois do deploy, teste:
 
 ```bash
 curl https://easyprint-routing-api.onrender.com/health
 ```
+
+O retorno deve conter `"orderStore":"sqlite"`. A fila e operacional e
+transitoria: pedidos com mais de dois dias sao apagados automaticamente. Um
+redeploy ou reinicio da instancia tambem pode esvaziar a fila, sem afetar as
+configuracoes locais das lojas.
 
 Se voce mudar o nome do servico no Render, ajuste tambem:
 
@@ -66,7 +41,7 @@ Se voce mudar o nome do servico no Render, ajuste tambem:
 - `RENDER_API_URL` em `src/features/routing/routingApi.js`
 - `.env.example`
 
-## 3. GitHub Pages
+## 2. GitHub Pages
 
 1. No GitHub, va em Settings > Pages.
 2. Em Build and deployment, selecione GitHub Actions.
@@ -79,9 +54,10 @@ VITE_ROUTING_API_URL=https://easyprint-routing-api.onrender.com
 4. Faca push para `main` ou `master`.
 5. O workflow `.github/workflows/deploy-pages.yml` vai rodar `npm ci`, `npm run build` e publicar `dist`.
 
-## 4. App desktop e atualizacoes
+## 3. App desktop e atualizacoes
 
-A partir da versao `1.1.0`, o app instalado consegue verificar, baixar e instalar atualizacoes pelo proprio menu de conta da loja.
+A partir da versao `1.1.7`, o app instalado consegue verificar, baixar e instalar
+atualizacoes antes ou depois de entrar em uma conta.
 
 Importante: maquinas que ainda estao em uma versao antiga sem atualizador precisam instalar manualmente uma vez o instalador `1.1.0` ou superior. Depois disso, as proximas atualizacoes entram pelo app.
 

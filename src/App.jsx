@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './shared/ui/Icon';
 import { StoreProfileProvider, useStoreProfile } from './shared/storeProfile/StoreProfileContext';
-import { LOCAL_DATA_MODE, routingApi } from './features/routing/routingApi';
+import { LOCAL_DATA_MODE, SHARED_ORDERS_MODE, routingApi } from './features/routing/routingApi';
 import { isResentOrder, printRoutedOrderText } from './features/routing/directOrderPrint';
 import { showAppAlert } from './shared/ui/appDialog';
 import './App.css';
@@ -87,6 +87,173 @@ const updateStatusLabels = {
 };
 
 const getUpdateStatusLabel = (status = 'idle') => updateStatusLabels[status] || 'Pronto';
+
+function AppUpdater() {
+  const [open, setOpen] = useState(false);
+  const [appInfo, setAppInfo] = useState({ version: '', isPackaged: false, updateSupported: false });
+  const [updateStatus, setUpdateStatus] = useState({
+    status: 'idle',
+    appVersion: '',
+    availableVersion: '',
+    percent: 0,
+    message: '',
+    supported: false,
+  });
+  const [updateBusy, setUpdateBusy] = useState('');
+
+  useEffect(() => {
+    const desktop = window.easyHubDesktop;
+    let canceled = false;
+    let unsubscribe = () => {};
+
+    if (!desktop?.updates) return unsubscribe;
+
+    if (typeof desktop.getAppInfo === 'function') {
+      desktop.getAppInfo()
+        .then((info) => {
+          if (!canceled && info) setAppInfo(info);
+        })
+        .catch((error) => {
+          console.warn('Falha ao ler versao do app', error);
+        });
+    }
+
+    desktop.updates.getStatus()
+      .then((status) => {
+        if (!canceled && status) setUpdateStatus(status);
+      })
+      .catch((error) => {
+        console.warn('Falha ao ler status de atualizacao', error);
+      });
+
+    unsubscribe = desktop.updates.onStatus((status) => {
+      if (!canceled && status) setUpdateStatus(status);
+    });
+
+    return () => {
+      canceled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  const runUpdateAction = async (actionName) => {
+    const updates = window.easyHubDesktop?.updates;
+    const action = updates?.[actionName];
+
+    if (typeof action !== 'function') {
+      void showAppAlert('Atualizacoes automaticas estao disponiveis apenas no app instalado.', { tone: 'danger' });
+      return;
+    }
+
+    setUpdateBusy(actionName);
+
+    try {
+      const nextStatus = await action();
+      if (nextStatus) setUpdateStatus(nextStatus);
+      if (actionName === 'check' && nextStatus?.status === 'not-available') {
+        void showAppAlert('O app ja esta na versao mais recente.');
+      }
+    } catch (error) {
+      void showAppAlert(error.message || 'Falha ao executar atualizacao.', { tone: 'danger' });
+    } finally {
+      setUpdateBusy('');
+    }
+  };
+
+  const updateProgress = Math.round(Number(updateStatus.percent || 0));
+  const updateSupported = Boolean(updateStatus.supported || appInfo.updateSupported);
+  const updateCurrentVersion = appInfo.version || updateStatus.appVersion || '-';
+  const canCheckUpdate = updateSupported && !updateBusy && updateStatus.status !== 'checking' && updateStatus.status !== 'downloading' && updateStatus.status !== 'installing';
+  const canDownloadUpdate = updateSupported && !updateBusy && updateStatus.status === 'available';
+  const canInstallUpdate = updateSupported && !updateBusy && updateStatus.status === 'downloaded';
+
+  return (
+    <>
+      <button type="button" className="app-update-launcher" onClick={() => setOpen(true)}>
+        <Icon name="refresh" size={15} />
+        <span>Atualizar app</span>
+      </button>
+
+      {open ? (
+        <div className="account-modal-backdrop" onClick={() => setOpen(false)}>
+          <section className="account-modal app-update-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="account-modal-header">
+              <div>
+                <h2>Atualizacoes do app</h2>
+                <p>Este recurso funciona antes ou depois de entrar em uma loja.</p>
+              </div>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Fechar atualizacoes">
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+
+            <section className="account-update-panel" aria-live="polite">
+              <div className="account-update-header">
+                <div>
+                  <strong>Easy Hub</strong>
+                  <span>Versao instalada: {updateCurrentVersion}</span>
+                </div>
+                <span className={`account-update-badge status-${updateStatus.status || 'idle'}`}>
+                  {getUpdateStatusLabel(updateStatus.status)}
+                </span>
+              </div>
+
+              <p>
+                {updateStatus.message || (updateSupported
+                  ? 'Nenhuma verificacao recente.'
+                  : 'Disponivel apenas no app instalado.')}
+              </p>
+
+              {updateStatus.availableVersion ? (
+                <small>Nova versao: {updateStatus.availableVersion}</small>
+              ) : null}
+
+              {updateStatus.status === 'downloading' ? (
+                <div className="account-update-progress" aria-label={`Baixando ${updateProgress}%`}>
+                  <span style={{ width: `${Math.max(0, Math.min(100, updateProgress))}%` }} />
+                </div>
+              ) : null}
+
+              <div className="account-update-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => runUpdateAction('check')}
+                  disabled={!canCheckUpdate}
+                >
+                  <Icon name="refresh" size={14} />
+                  <span>{updateBusy === 'check' ? 'Verificando...' : 'Verificar'}</span>
+                </button>
+
+                {updateStatus.status === 'available' ? (
+                  <button
+                    type="button"
+                    onClick={() => runUpdateAction('download')}
+                    disabled={!canDownloadUpdate}
+                  >
+                    <Icon name="download" size={14} />
+                    <span>{updateBusy === 'download' ? 'Baixando...' : 'Baixar'}</span>
+                  </button>
+                ) : null}
+
+                {updateStatus.status === 'downloaded' ? (
+                  <button
+                    type="button"
+                    onClick={() => runUpdateAction('install')}
+                    disabled={!canInstallUpdate}
+                  >
+                    <Icon name="check" size={14} />
+                    <span>Reiniciar e instalar</span>
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
+}
 
 const playReceivedOrderSound = () => {
   try {
@@ -290,16 +457,6 @@ function ProjectHub() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getInitialSidebarCollapsed);
   const { store, reloadProfile, logout } = useStoreProfile();
   const [accountOpen, setAccountOpen] = useState(false);
-  const [appInfo, setAppInfo] = useState({ version: '', isPackaged: false, updateSupported: false });
-  const [updateStatus, setUpdateStatus] = useState({
-    status: 'idle',
-    appVersion: '',
-    availableVersion: '',
-    percent: 0,
-    message: '',
-    supported: false,
-  });
-  const [updateBusy, setUpdateBusy] = useState('');
   const [accountForm, setAccountForm] = useState({
     name: '',
     username: '',
@@ -327,41 +484,6 @@ function ProjectHub() {
       autoPrint: Boolean(store?.autoPrint)
     });
   }, [store]);
-
-  useEffect(() => {
-    const desktop = window.easyHubDesktop;
-    let canceled = false;
-    let unsubscribe = () => {};
-
-    if (!desktop?.updates) return unsubscribe;
-
-    if (typeof desktop.getAppInfo === 'function') {
-      desktop.getAppInfo()
-        .then((info) => {
-          if (!canceled && info) setAppInfo(info);
-        })
-        .catch((error) => {
-          console.warn('Falha ao ler versao do app', error);
-        });
-    }
-
-    desktop.updates.getStatus()
-      .then((status) => {
-        if (!canceled && status) setUpdateStatus(status);
-      })
-      .catch((error) => {
-        console.warn('Falha ao ler status de atualizacao', error);
-      });
-
-    unsubscribe = desktop.updates.onStatus((status) => {
-      if (!canceled && status) setUpdateStatus(status);
-    });
-
-    return () => {
-      canceled = true;
-      unsubscribe();
-    };
-  }, []);
 
   const handleProjectChange = (nextProjectId) => {
     if (nextProjectId === activeProject.id) return;
@@ -405,37 +527,6 @@ function ProjectHub() {
       void showAppAlert(error.message || 'Falha ao salvar a conta.', { tone: 'danger' });
     }
   };
-
-  const runUpdateAction = async (actionName) => {
-    const updates = window.easyHubDesktop?.updates;
-    const action = updates?.[actionName];
-
-    if (typeof action !== 'function') {
-      void showAppAlert('Atualizacoes automaticas estao disponiveis apenas no app instalado.', { tone: 'danger' });
-      return;
-    }
-
-    setUpdateBusy(actionName);
-
-    try {
-      const nextStatus = await action();
-      if (nextStatus) setUpdateStatus(nextStatus);
-      if (actionName === 'check' && nextStatus?.status === 'not-available') {
-        void showAppAlert('O app ja esta na versao mais recente.');
-      }
-    } catch (error) {
-      void showAppAlert(error.message || 'Falha ao executar atualizacao.', { tone: 'danger' });
-    } finally {
-      setUpdateBusy('');
-    }
-  };
-
-  const updateProgress = Math.round(Number(updateStatus.percent || 0));
-  const updateSupported = Boolean(updateStatus.supported || appInfo.updateSupported);
-  const updateCurrentVersion = appInfo.version || updateStatus.appVersion || '-';
-  const canCheckUpdate = updateSupported && !updateBusy && updateStatus.status !== 'checking' && updateStatus.status !== 'downloading' && updateStatus.status !== 'installing';
-  const canDownloadUpdate = updateSupported && !updateBusy && updateStatus.status === 'available';
-  const canInstallUpdate = updateSupported && !updateBusy && updateStatus.status === 'downloaded';
 
   return (
     <div className={`project-hub ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -490,10 +581,13 @@ function ProjectHub() {
         <div className="project-sidebar-footer">
           <span>Projeto ativo</span>
           <strong>{activeProject.name}</strong>
-          <small>{LOCAL_DATA_MODE ? 'Dados salvos neste computador' : 'Perfil geral sincronizado'}</small>
-          <button type="button" onClick={() => setAccountOpen(true)}>
-            Atualizar app
-          </button>
+          <small>
+            {LOCAL_DATA_MODE && SHARED_ORDERS_MODE
+              ? 'Configuracoes locais | pedidos compartilhados'
+              : LOCAL_DATA_MODE
+                ? 'Dados salvos neste computador'
+                : 'Perfil geral sincronizado'}
+          </small>
           <button type="button" onClick={logout}>
             Trocar loja
           </button>
@@ -520,7 +614,7 @@ function ProjectHub() {
                 <h2>Conta da loja</h2>
                 <p>
                   {LOCAL_DATA_MODE
-                    ? 'Modo local: estas informacoes ficam somente neste computador.'
+                    ? 'Estas informacoes ficam somente neste computador. Apenas os pedidos sao compartilhados.'
                     : 'Essas informacoes valem para Easy Print, Delivery Board e Finally Storage.'}
                 </p>
               </div>
@@ -601,68 +695,6 @@ function ProjectHub() {
               <span>Imprimir automaticamente pedidos recebidos nesta loja</span>
             </label>
 
-            <section className="account-update-panel" aria-live="polite">
-              <div className="account-update-header">
-                <div>
-                  <strong>Atualizacoes do app</strong>
-                  <span>Versao instalada: {updateCurrentVersion}</span>
-                </div>
-                <span className={`account-update-badge status-${updateStatus.status || 'idle'}`}>
-                  {getUpdateStatusLabel(updateStatus.status)}
-                </span>
-              </div>
-
-              <p>
-                {updateStatus.message || (updateSupported
-                  ? 'Nenhuma verificacao recente.'
-                  : 'Disponivel apenas no app instalado.')}
-              </p>
-
-              {updateStatus.availableVersion ? (
-                <small>Nova versao: {updateStatus.availableVersion}</small>
-              ) : null}
-
-              {updateStatus.status === 'downloading' ? (
-                <div className="account-update-progress" aria-label={`Baixando ${updateProgress}%`}>
-                  <span style={{ width: `${Math.max(0, Math.min(100, updateProgress))}%` }} />
-                </div>
-              ) : null}
-
-              <div className="account-update-actions">
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => runUpdateAction('check')}
-                  disabled={!canCheckUpdate}
-                >
-                  <Icon name="refresh" size={14} />
-                  <span>{updateBusy === 'check' ? 'Verificando...' : 'Verificar'}</span>
-                </button>
-
-                {updateStatus.status === 'available' ? (
-                  <button
-                    type="button"
-                    onClick={() => runUpdateAction('download')}
-                    disabled={!canDownloadUpdate}
-                  >
-                    <Icon name="download" size={14} />
-                    <span>{updateBusy === 'download' ? 'Baixando...' : 'Baixar'}</span>
-                  </button>
-                ) : null}
-
-                {updateStatus.status === 'downloaded' ? (
-                  <button
-                    type="button"
-                    onClick={() => runUpdateAction('install')}
-                    disabled={!canInstallUpdate}
-                  >
-                    <Icon name="check" size={14} />
-                    <span>Reiniciar e instalar</span>
-                  </button>
-                ) : null}
-              </div>
-            </section>
-
             <div className="account-modal-actions">
               <button type="button" className="secondary" onClick={() => setAccountOpen(false)}>
                 Cancelar
@@ -680,9 +712,12 @@ function ProjectHub() {
 
 function App() {
   return (
-    <StoreProfileProvider>
-      <ProjectHub />
-    </StoreProfileProvider>
+    <>
+      <StoreProfileProvider>
+        <ProjectHub />
+      </StoreProfileProvider>
+      <AppUpdater />
+    </>
   );
 }
 

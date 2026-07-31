@@ -134,4 +134,18 @@ assert.equal(
   '{}'
 );
 
+const staleOrder = repository.createOrder(db, {
+  ...duplicateInput,
+  parsedData: { ...paidOnline, orderNumber: 'pedido-antigo' },
+  rawText: `${samplePaidOnline}\npedido-antigo`
+});
+db.prepare('UPDATE orders SET created_at = ?, updated_at = ? WHERE id = ?').run(
+  new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+  new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+  staleOrder.id
+);
+repository.listSentOrders(db, 'penha');
+assert.equal(Boolean(repository.getOrder(db, staleOrder.id)), false);
+assert.equal(repository.listOrderEvents(db, staleOrder.id).length, 0);
+
 console.log('routing.test.js OK');

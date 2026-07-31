@@ -2,11 +2,18 @@ import { localRoutingApi } from './localRoutingStore';
 
 export const CURRENT_STORE_KEY = 'easyPrintRoutingCurrentStoreId';
 export const SESSION_TOKEN_KEY = 'easyPrintRoutingSessionToken';
-export const LOCAL_DATA_MODE = import.meta.env.VITE_DATA_MODE !== 'remote';
+const configuredDataMode = String(import.meta.env.VITE_DATA_MODE || 'hybrid').trim().toLowerCase();
+export const DATA_MODE = ['local', 'remote', 'hybrid'].includes(configuredDataMode)
+  ? configuredDataMode
+  : 'hybrid';
+export const LOCAL_DATA_MODE = DATA_MODE !== 'remote';
+export const SHARED_ORDERS_MODE = DATA_MODE !== 'local';
 
 const LOCAL_API_URL = 'http://127.0.0.1:3333';
 const RENDER_API_URL = 'https://easyprint-routing-api.onrender.com';
 const ROUTING_API_URL_OVERRIDE_KEY = 'easyPrintRoutingApiUrl';
+const ORDER_RELAY_TOKEN_KEY_PREFIX = 'easyPrintOrderRelayToken:';
+let orderRelaySessionPromise = null;
 
 const LOCAL_API_URL_PATTERN = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/i;
 
@@ -67,7 +74,20 @@ export const setAuthSession = ({ token, store }) => {
   window.localStorage.setItem(CURRENT_STORE_KEY, store?.id || '');
 };
 
+const getOrderRelayTokenKey = (storeId) => `${ORDER_RELAY_TOKEN_KEY_PREFIX}${storeId}`;
+
+const getStoredOrderRelayToken = (storeId) => {
+  if (typeof window === 'undefined' || !storeId) return '';
+  return window.localStorage.getItem(getOrderRelayTokenKey(storeId)) || '';
+};
+
+const clearOrderRelayToken = (storeId) => {
+  if (typeof window === 'undefined' || !storeId) return;
+  window.localStorage.removeItem(getOrderRelayTokenKey(storeId));
+};
+
 export const clearCurrentStoreId = () => {
+  clearOrderRelayToken(getCurrentStoreId());
   window.localStorage.removeItem(CURRENT_STORE_KEY);
   window.localStorage.removeItem(SESSION_TOKEN_KEY);
 };
@@ -109,6 +129,49 @@ export async function apiRequest(path, options = {}) {
 
   return payload;
 }
+
+const createOrderRelaySession = async () => {
+  const storeId = getCurrentStoreId();
+  if (!storeId) throw new Error('Escolha a loja antes de compartilhar pedidos.');
+
+  const session = await apiRequest('/api/order-relay/session', {
+    method: 'POST',
+    body: { storeId },
+    requireStore: false,
+    sessionToken: ''
+  });
+  window.localStorage.setItem(getOrderRelayTokenKey(storeId), session.token);
+  return session.token;
+};
+
+const ensureOrderRelayToken = async () => {
+  const storeId = getCurrentStoreId();
+  const storedToken = getStoredOrderRelayToken(storeId);
+  if (storedToken) return storedToken;
+
+  if (!orderRelaySessionPromise) {
+    orderRelaySessionPromise = createOrderRelaySession()
+      .finally(() => {
+        orderRelaySessionPromise = null;
+      });
+  }
+  return orderRelaySessionPromise;
+};
+
+const orderApiRequest = async (path, options = {}, allowSessionRefresh = true) => {
+  const storeId = getCurrentStoreId();
+  const relayToken = await ensureOrderRelayToken();
+
+  try {
+    return await apiRequest(path, { ...options, sessionToken: relayToken });
+  } catch (error) {
+    if (allowSessionRefresh && error.status === 401) {
+      clearOrderRelayToken(storeId);
+      return orderApiRequest(path, options, false);
+    }
+    throw error;
+  }
+};
 
 const buildOrderListPath = (kind, options = {}) => {
   const params = new URLSearchParams();
@@ -170,4 +233,49 @@ const remoteRoutingApi = {
     })
 };
 
-export const routingApi = LOCAL_DATA_MODE ? localRoutingApi : remoteRoutingApi;
+const sharedOrderApi = {
+  createOrder: ({ rawText, targetStoreId, routeConfirmed }) =>
+    orderApiRequest('/api/orders', {
+      method: 'POST',
+      body: { rawText, targetStoreId, routeConfirmed }
+    }),
+  listReceivedOrders: (options) => orderApiRequest(buildOrderListPath('received', options)),
+  listSentOrders: (options) => orderApiRequest(buildOrderListPath('sent', options)),
+  getOrder: (orderId) => orderApiRequest(`/api/orders/${encodeURIComponent(orderId)}`),
+  addOrderEvent: (orderId, body) =>
+    orderApiRequest(`/api/orders/${encodeURIComponent(orderId)}/events`, {
+      method: 'POST',
+      body
+    }),
+  updateOrderStatus: (orderId, status, version) =>
+    orderApiRequest(`/api/orders/${encodeURIComponent(orderId)}/status`, {
+      method: 'PATCH',
+      body: { status, version }
+    }),
+  markViewed: (orderId, version) =>
+    orderApiRequest(`/api/orders/${encodeURIComponent(orderId)}/view`, {
+      method: 'POST',
+      body: { version }
+    }),
+  markPrinted: (orderId, version) =>
+    orderApiRequest(`/api/orders/${encodeURIComponent(orderId)}/printed`, {
+      method: 'POST',
+      body: { version }
+    }),
+  cancelOrder: (orderId, version) =>
+    orderApiRequest(`/api/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'POST',
+      body: { version }
+    })
+};
+
+const hybridRoutingApi = {
+  ...localRoutingApi,
+  ...sharedOrderApi
+};
+
+export const routingApi = DATA_MODE === 'remote'
+  ? remoteRoutingApi
+  : DATA_MODE === 'local'
+    ? localRoutingApi
+    : hybridRoutingApi;

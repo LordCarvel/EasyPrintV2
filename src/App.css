@@ -322,6 +322,40 @@
   background: rgba(17, 24, 39, 0.48);
 }
 
+.app-update-launcher {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 4200;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid #285180;
+  border-radius: 8px;
+  background: #285180;
+  color: #ffffff;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.18);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.app-update-launcher:hover {
+  background: #1e426e;
+}
+
+.app-update-modal {
+  width: min(480px, 100%);
+}
+
+.app-update-modal .account-update-panel {
+  margin-top: 0;
+}
+
 .account-modal {
   width: min(640px, 100%);
   max-height: calc(100vh - 32px);

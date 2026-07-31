@@ -25,8 +25,8 @@ const methods = [
   'connectStoreToAll'
 ];
 
-const hasSupabaseConfig = () =>
-  Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const getConfiguredMode = () =>
+  String(process.env.ROUTING_STORE_MODE || 'sqlite').trim().toLowerCase();
 
 const bindRepository = (repository, db, mode) => {
   const store = { mode };
@@ -39,13 +39,22 @@ const bindRepository = (repository, db, mode) => {
 };
 
 export const createDataStore = async () => {
-  if (hasSupabaseConfig()) {
+  const configuredMode = getConfiguredMode();
+
+  if (configuredMode === 'supabase') {
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY para usar ROUTING_STORE_MODE=supabase.');
+    }
     const repository = await import('./repository-supabase.js');
     const db = repository.openDatabase();
     await repository.migrate(db);
     const store = bindRepository(repository, db, 'supabase');
     await store.seedInitialData();
     return store;
+  }
+
+  if (configuredMode !== 'sqlite') {
+    throw new Error(`ROUTING_STORE_MODE invalido: ${configuredMode}. Use sqlite ou supabase.`);
   }
 
   const database = await import('./database.js');

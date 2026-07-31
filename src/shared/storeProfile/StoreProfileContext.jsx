@@ -3,6 +3,7 @@ import {
   clearCurrentStoreId,
   getSessionToken,
   LOCAL_DATA_MODE,
+  SHARED_ORDERS_MODE,
   routingApi,
   setAuthSession
 } from '../../features/routing/routingApi';
@@ -88,7 +89,9 @@ function StoreProfileLogin({ onSessionReady }) {
           <h1>Perfil da loja</h1>
           <p>
             {LOCAL_DATA_MODE
-              ? 'Escolha a loja. Enquanto o banco estiver fora, tudo sera salvo somente neste computador.'
+              ? SHARED_ORDERS_MODE
+                ? 'Escolha a loja. Perfis e configuracoes ficam neste computador; pedidos circulam entre as filiais.'
+                : 'Escolha a loja. Enquanto o servidor estiver fora, tudo sera salvo somente neste computador.'
               : 'Entre uma vez para carregar caixa, motoboys, rotas e configuracoes da pizzaria em todos os projetos.'}
           </p>
         </div>
@@ -125,7 +128,8 @@ function StoreProfileLogin({ onSessionReady }) {
 
         <p className="store-profile-note">
           Lojas iniciais: penha, gravata ou sao-domingos. Senha inicial: 1234.
-          {LOCAL_DATA_MODE ? ' O modo local nao compartilha pedidos entre computadores.' : ''}
+          {LOCAL_DATA_MODE && SHARED_ORDERS_MODE ? ' Somente os pedidos usam o servidor compartilhado.' : ''}
+          {LOCAL_DATA_MODE && !SHARED_ORDERS_MODE ? ' O modo totalmente local nao compartilha pedidos entre computadores.' : ''}
         </p>
 
         <div className="store-profile-store-list">

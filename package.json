@@ -1,7 +1,7 @@
 {
   "name": "easyprint",
   "private": true,
-  "version": "1.1.6",
+  "version": "1.1.7",
   "description": "Easy Hub desktop app",
   "author": "LordCarvel",
   "type": "module",
@@ -17,6 +17,7 @@
     "server:seed:env": "node --env-file=.env --no-warnings=ExperimentalWarning ./server/seed.js",
     "test:routing": "node --no-warnings=ExperimentalWarning ./server/routing.test.js",
     "test:local": "node ./server/local-routing.test.js",
+    "test:shared-orders": "node ./server/order-relay.test.js",
     "desktop": "node ./scripts/run-electron-dev.cjs",
     "electron": "node ./scripts/run-electron-dev.cjs",
     "electron:prod": "npm run build:desktop && electron .",
