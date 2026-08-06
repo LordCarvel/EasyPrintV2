@@ -18,6 +18,7 @@
     "test:routing": "node --no-warnings=ExperimentalWarning ./server/routing.test.js",
     "test:local": "node ./server/local-routing.test.js",
     "test:shared-orders": "node ./server/order-relay.test.js",
+    "test:desktop": "node --test electron/*.test.cjs src/shared/utils/*.test.js",
     "desktop": "node ./scripts/run-electron-dev.cjs",
     "electron": "node ./scripts/run-electron-dev.cjs",
     "electron:prod": "npm run build:desktop && electron .",
@@ -82,9 +83,10 @@
       "artifactName": "EasyHub-Setup-${version}.${ext}"
     },
     "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Easy Hub",

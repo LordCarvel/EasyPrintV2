@@ -4,12 +4,10 @@ import { confirmAction, showAppAlert } from '../../shared/ui/appDialog';
 import { hydrateLocalSettingsFromStore, saveStoreSettingsPatch } from '../routing/storeSettingsClient';
 import { routingApi } from '../routing/routingApi';
 import { formatCurrency, parseIfoodFinancial } from '../../../shared/routing/ifoodFinancial';
+import { formatEasyPrintDateTime, getEasyPrintTimestamp } from '../../shared/utils/dateTime';
 import './CashRegister.css';
 
-const getTimestamp = (value) => {
-  const timestamp = new Date(value || '').getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
-};
+const getTimestamp = getEasyPrintTimestamp;
 
 const isSentCashOpenOrder = (order = {}, sentCashClearedAt = '') => {
   const clearedTimestamp = getTimestamp(sentCashClearedAt);
@@ -20,15 +18,7 @@ const isSentCashOpenOrder = (order = {}, sentCashClearedAt = '') => {
 };
 
 const formatSentCashClearedAt = (value) => {
-  const timestamp = getTimestamp(value);
-  if (!timestamp) return '';
-
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(timestamp));
+  return formatEasyPrintDateTime(value, '');
 };
 
 export function CashRegister() {

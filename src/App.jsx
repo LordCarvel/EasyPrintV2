@@ -163,7 +163,9 @@ function AppUpdater() {
   const updateProgress = Math.round(Number(updateStatus.percent || 0));
   const updateSupported = Boolean(updateStatus.supported || appInfo.updateSupported);
   const updateCurrentVersion = appInfo.version || updateStatus.appVersion || '-';
-  const canCheckUpdate = updateSupported && !updateBusy && updateStatus.status !== 'checking' && updateStatus.status !== 'downloading' && updateStatus.status !== 'installing';
+  const canCheckUpdate = updateSupported
+    && !updateBusy
+    && !['checking', 'downloading', 'downloaded', 'installing'].includes(updateStatus.status);
   const canDownloadUpdate = updateSupported && !updateBusy && updateStatus.status === 'available';
   const canInstallUpdate = updateSupported && !updateBusy && updateStatus.status === 'downloaded';
 

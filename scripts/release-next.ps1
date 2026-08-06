@@ -153,6 +153,7 @@ if (-not $SkipChecks) {
   Run-Step 'Validar testes de roteamento' npm @('run', 'test:routing')
   Run-Step 'Validar armazenamento local' npm @('run', 'test:local')
   Run-Step 'Validar compartilhamento de pedidos' npm @('run', 'test:shared-orders')
+  Run-Step 'Validar atualizador e fuso horario' npm @('run', 'test:desktop')
   Run-Step 'Validar Electron main' node @('--check', 'electron/main.cjs')
   Run-Step 'Validar Electron preload' node @('--check', 'electron/preload.cjs')
 }

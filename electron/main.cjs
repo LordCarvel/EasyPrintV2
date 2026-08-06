@@ -3,6 +3,7 @@ const { autoUpdater } = require('electron-updater');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { shouldSkipUpdateCheck } = require('./updater-policy.cjs');
 
 const APP_PROTOCOL = 'easyhub';
 const APP_HOST = 'app';
@@ -13,6 +14,9 @@ let mainWindow = null;
 let updateCheckTimer = null;
 let updaterConfigured = false;
 let updateCheckPromise = null;
+let updateDownloadPromise = null;
+let updateReady = false;
+let lastLoggedDownloadPercent = -10;
 let updateState = {
   status: 'idle',
   appVersion: app.getVersion(),
@@ -38,6 +42,7 @@ protocol.registerSchemesAsPrivileged([
 const localAppData = process.env.LOCALAPPDATA || app.getPath('appData');
 const userDataPath = path.join(localAppData, 'EasyHub');
 const cachePath = path.join(userDataPath, 'Cache');
+const updaterLogPath = path.join(userDataPath, 'updater.log');
 
 fs.mkdirSync(cachePath, { recursive: true });
 app.setName('Easy Hub');
@@ -47,6 +52,32 @@ app.commandLine.appendSwitch('disk-cache-dir', cachePath);
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-gpu-compositing');
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+
+function updateLogValue(value) {
+  if (value instanceof Error) return `${value.message}\n${value.stack || ''}`.trim();
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function appendUpdaterLog(level, ...values) {
+  try {
+    const message = values.map(updateLogValue).join(' ');
+    fs.appendFileSync(updaterLogPath, `${new Date().toISOString()} [${level}] ${message}\n`, 'utf8');
+  } catch {
+    // O diagnostico nunca pode impedir a abertura ou a atualizacao do app.
+  }
+}
+
+const updaterLogger = {
+  info: (...values) => appendUpdaterLog('INFO', ...values),
+  warn: (...values) => appendUpdaterLog('WARN', ...values),
+  error: (...values) => appendUpdaterLog('ERROR', ...values),
+  debug: (...values) => appendUpdaterLog('DEBUG', ...values),
+};
 
 function canUseAutoUpdater() {
   return app.isPackaged && !process.env.ELECTRON_START_URL;
@@ -78,11 +109,15 @@ function setUpdateState(patch = {}) {
 function configureAutoUpdater() {
   if (updaterConfigured) return;
   updaterConfigured = true;
-  autoUpdater.autoDownload = false;
+  autoUpdater.logger = updaterLogger;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowDowngrade = false;
+  appendUpdaterLog('INFO', 'Atualizador configurado', { version: app.getVersion() });
 
   autoUpdater.on('checking-for-update', () => {
+    if (updateReady) return;
+    appendUpdaterLog('INFO', 'Verificando atualizacao');
     setUpdateState({
       status: 'checking',
       percent: 0,
@@ -91,15 +126,19 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on('update-available', (info) => {
+    if (updateReady && updateState.availableVersion === info?.version) return;
+    appendUpdaterLog('INFO', 'Atualizacao encontrada', serializeUpdateInfo(info));
     setUpdateState({
-      status: 'available',
+      status: 'downloading',
       ...serializeUpdateInfo(info),
       percent: 0,
-      message: 'Atualizacao disponivel.',
+      message: 'Atualizacao encontrada. Iniciando download automatico...',
     });
   });
 
   autoUpdater.on('update-not-available', () => {
+    if (updateReady) return;
+    appendUpdaterLog('INFO', 'Nenhuma atualizacao disponivel');
     setUpdateState({
       status: 'not-available',
       availableVersion: '',
@@ -110,14 +149,22 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on('download-progress', (progress = {}) => {
+    const percent = Number(progress.percent || 0);
+    if (percent >= lastLoggedDownloadPercent + 10 || percent >= 100) {
+      lastLoggedDownloadPercent = Math.floor(percent / 10) * 10;
+      appendUpdaterLog('INFO', 'Progresso do download', { percent: Math.round(percent) });
+    }
     setUpdateState({
       status: 'downloading',
-      percent: Number(progress.percent || 0),
+      percent,
       message: 'Baixando atualizacao...',
     });
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    updateReady = true;
+    updateDownloadPromise = null;
+    appendUpdaterLog('INFO', 'Atualizacao baixada', serializeUpdateInfo(info));
     setUpdateState({
       status: 'downloaded',
       ...serializeUpdateInfo(info),
@@ -127,6 +174,8 @@ function configureAutoUpdater() {
   });
 
   autoUpdater.on('error', (error) => {
+    updateDownloadPromise = null;
+    appendUpdaterLog('ERROR', error);
     setUpdateState({
       status: 'error',
       message: error?.message || 'Falha ao verificar atualizacao.',
@@ -144,8 +193,7 @@ async function checkForUpdates({ silent = false } = {}) {
 
   configureAutoUpdater();
   if (updateCheckPromise) return updateCheckPromise;
-
-  if (silent && updateState.status === 'checking') return updateState;
+  if (shouldSkipUpdateCheck(updateState.status, { scheduled: silent })) return updateState;
 
   updateCheckPromise = autoUpdater
     .checkForUpdates()
@@ -280,26 +328,33 @@ ipcMain.handle('easyhub:update-download', async () => {
   }
 
   configureAutoUpdater();
+  if (updateReady) return updateState;
+  if (updateDownloadPromise) return updateDownloadPromise;
   setUpdateState({
     status: 'downloading',
     percent: 0,
     message: 'Baixando atualizacao...',
   });
 
-  try {
-    await autoUpdater.downloadUpdate();
-  } catch (error) {
-    setUpdateState({
-      status: 'error',
-      message: error?.message || 'Falha ao baixar atualizacao.',
+  updateDownloadPromise = autoUpdater.downloadUpdate()
+    .then(() => updateState)
+    .catch((error) => {
+      appendUpdaterLog('ERROR', error);
+      setUpdateState({
+        status: 'error',
+        message: error?.message || 'Falha ao baixar atualizacao.',
+      });
+      return updateState;
+    })
+    .finally(() => {
+      updateDownloadPromise = null;
     });
-  }
 
-  return updateState;
+  return updateDownloadPromise;
 });
 
 ipcMain.handle('easyhub:update-install', async () => {
-  if (updateState.status !== 'downloaded') {
+  if (!updateReady || updateState.status !== 'downloaded') {
     return setUpdateState({
       status: 'error',
       message: 'Nenhuma atualizacao baixada para instalar.',
@@ -310,7 +365,8 @@ ipcMain.handle('easyhub:update-install', async () => {
     status: 'installing',
     message: 'Reiniciando para instalar...',
   });
-  autoUpdater.quitAndInstall(false, true);
+  appendUpdaterLog('INFO', 'Reiniciando para instalar', { version: updateState.availableVersion });
+  setImmediate(() => autoUpdater.quitAndInstall(true, true));
   return updateState;
 });
 

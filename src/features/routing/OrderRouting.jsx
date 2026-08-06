@@ -6,6 +6,7 @@ import { clearCurrentStoreId, getCurrentStoreId, getSessionToken, routingApi, se
 import { printRoutedOrderText } from './directOrderPrint';
 import { loadStoreSettings, saveStoreSettingsPatch } from './storeSettingsClient';
 import { formatCurrency, parseIfoodFinancial } from '../../../shared/routing/ifoodFinancial';
+import { formatEasyPrintDateTime, getEasyPrintTimestamp } from '../../shared/utils/dateTime';
 import './OrderRouting.css';
 
 const SAMPLE_ORDER = `6391
@@ -54,17 +55,7 @@ const mergeOrderChanges = (currentOrders = [], changedOrders = [], options = {})
 };
 
 const formatDateTime = (value) => {
-  if (!value) return '-';
-  try {
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(new Date(value));
-  } catch {
-    return '-';
-  }
+  return formatEasyPrintDateTime(value);
 };
 
 const areaTextToInput = (value = []) => Array.isArray(value) ? value.join(', ') : String(value || '');
@@ -75,10 +66,7 @@ const paymentLabels = {
   online: 'Online'
 };
 
-const getTimestamp = (value) => {
-  const timestamp = new Date(value || '').getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
-};
+const getTimestamp = getEasyPrintTimestamp;
 
 const isSentCashOpenOrder = (order = {}, sentCashClearedAt = '') => {
   const clearedTimestamp = getTimestamp(sentCashClearedAt);
@@ -89,15 +77,7 @@ const isSentCashOpenOrder = (order = {}, sentCashClearedAt = '') => {
 };
 
 const formatSentCashClearedAt = (value) => {
-  const timestamp = getTimestamp(value);
-  if (!timestamp) return '';
-
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(timestamp));
+  return formatEasyPrintDateTime(value, '');
 };
 
 const RESEND_STATUS = 'reenviado';
